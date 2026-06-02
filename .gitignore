@@ -1,0 +1,79 @@
+# ── Flutter / Dart ────────────────────────────────────────────────────────────
+**/doc/api/
+**/ios/Flutter/.last_build_id
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.pub-cache/
+.pub/
+/build/
+/coverage/
+
+# ── Android ───────────────────────────────────────────────────────────────────
+/android/app/debug/
+/android/app/profile/
+/android/app/release/
+/android/.gradle/
+/android/captures/
+/android/gradlew
+/android/gradlew.bat
+/android/local.properties
+/android/key.properties
+*.jks
+*.keystore
+
+# ── iOS ───────────────────────────────────────────────────────────────────────
+/ios/Flutter/Generated.xcconfig
+/ios/Flutter/flutter_export_environment.sh
+/ios/Pods/
+/ios/.symlinks/
+/ios/Runner.xcworkspace/xcuserdata/
+*.xcworkspace
+
+# ── Web ───────────────────────────────────────────────────────────────────────
+/web/
+
+# ── Fichiers sensibles — NE JAMAIS push ───────────────────────────────────────
+# Clés Firebase
+google-services.json
+GoogleService-Info.plist
+**/google-services.json
+**/GoogleService-Info.plist
+
+# Variables d'environnement et secrets
+.env
+.env.*
+*.env
+config/secrets.dart
+lib/config/env.dart
+lib/core/config/secrets.dart
+
+# Clés API, tokens
+api_keys.dart
+secrets.dart
+
+# ── IDE ───────────────────────────────────────────────────────────────────────
+.idea/
+.vscode/settings.json
+.vscode/launch.json
+*.iml
+*.ipr
+*.iws
+.DS_Store
+Thumbs.db
+
+# ── Build artifacts ───────────────────────────────────────────────────────────
+*.class
+*.log
+*.pyc
+*.swp
+app.*.symbols
+app.*.map.json
+*.apk
+*.aab
+*.ipa
+
+# ── Divers ────────────────────────────────────────────────────────────────────
+.history
+.svn/
+migrate_working_dir/

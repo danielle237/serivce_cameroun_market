@@ -1,0 +1,117 @@
+name: w2d_app
+description: W2D Consulting — Application mobile Cameroun
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.2.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+  cupertino_icons: ^1.0.6
+
+  # Navigation
+  go_router: ^13.0.0
+
+  # HTTP & API
+  dio: ^5.4.0
+  pretty_dio_logger: ^1.3.1
+
+  # State management
+  flutter_riverpod: ^2.4.10
+  riverpod_annotation: ^2.3.3
+
+  # Stockage sécurisé (tokens JWT)
+  flutter_secure_storage: ^9.0.0
+
+  # WebSockets
+  socket_io_client: ^2.0.3+1
+
+  # Biometrique & caméra
+  camera: ^0.10.5+9
+  # google_mlkit_face_detection: ^0.9.0  # Retiré temporairement (SDK conflict lStar)
+
+  # Localisation GPS
+  geolocator: ^11.0.0
+  permission_handler: ^11.3.0
+
+  # Stockage offline
+  hive: ^2.2.3
+  hive_flutter: ^1.1.0
+
+  # Notifications
+  # flutter_local_notifications: ^17.0.0  # Retiré temporairement (nécessite desugar_jdk_libs non disponible sur ce réseau)
+  firebase_messaging: ^15.0.0
+  firebase_core: ^3.0.0
+
+  # Media
+  image_picker: ^1.0.7
+  cached_network_image: ^3.3.1
+  video_player: ^2.8.3
+  record: ^5.2.0
+  just_audio: ^0.9.36
+  audioplayers: ^6.0.0
+  http: ^1.2.0
+
+  # UI
+  flutter_svg: ^2.0.10+1
+  lottie: ^3.0.0
+  shimmer: ^3.0.0
+  badges: ^3.1.2
+  intl: ^0.20.2
+  timeago: ^3.6.1
+  fl_chart: ^0.67.0
+
+  # Cartes & maps
+  flutter_map: ^6.1.0
+  latlong2: ^0.9.0
+
+  # Paiement
+  url_launcher: ^6.2.4
+  webview_flutter: ^4.4.2
+
+  # Utilitaires
+  uuid: ^4.3.3
+  path_provider: ^2.1.2
+  share_plus: ^10.0.0
+  connectivity_plus: ^6.0.3
+
+
+dependency_overrides:
+  record_web: ^1.2.0
+  record_linux: ^1.0.0
+  record_windows: ^1.0.0
+  record_platform_interface: ^1.6.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
+  build_runner: ^2.4.8
+  riverpod_generator: ^2.3.9
+  hive_generator: ^2.0.1
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/images/
+    - assets/icons/
+    - assets/animations/
+  # fonts Poppins à ajouter manuellement:
+  # 1. Télécharger sur https://fonts.google.com/specimen/Poppins
+  # 2. Copier les .ttf dans assets/fonts/
+  # 3. Décommenter le bloc fonts ci-dessous
+  #
+  # fonts:
+  #   - family: Poppins
+  #     fonts:
+  #       - asset: assets/fonts/Poppins-Regular.ttf
+  #       - asset: assets/fonts/Poppins-Medium.ttf
+  #         weight: 500
+  #       - asset: assets/fonts/Poppins-SemiBold.ttf
+  #         weight: 600
+  #       - asset: assets/fonts/Poppins-Bold.ttf
+  #         weight: 700

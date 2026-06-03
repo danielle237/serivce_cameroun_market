@@ -79,6 +79,10 @@ dependencies:
   share_plus: ^10.0.0
   connectivity_plus: ^6.0.3
 
+  # PDF & impression
+  pdf: ^3.10.7
+  printing: ^5.11.0
+
 
 dependency_overrides:
   record_web: ^1.2.0

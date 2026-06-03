@@ -28,6 +28,8 @@ class ChatScreen extends ConsumerStatefulWidget {
   final Map<String, dynamic>? applicationData;
   // Contexte optionnel : devis artisan
   final Map<String, dynamic>? quoteData;
+  // Contexte optionnel : marketplace (produit ou commande)
+  final Map<String, dynamic>? marketplaceData;
 
   const ChatScreen({
     super.key,
@@ -35,6 +37,7 @@ class ChatScreen extends ConsumerStatefulWidget {
     this.applicationId,
     this.applicationData,
     this.quoteData,
+    this.marketplaceData,
   });
 
   @override
@@ -503,6 +506,10 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       ),
       body: Column(
         children: [
+          // ── Bandeau marketplace (produit ou commande) ────────────────────
+          if (widget.marketplaceData != null)
+            _MarketplaceBanner(data: widget.marketplaceData!),
+
           // ── Bandeau devis artisan (si contexte fourni) ───────────────────
           if (widget.quoteData != null)
             _QuoteBanner(
@@ -829,6 +836,85 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       ),
     ]);
   }
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// BANDEAU MARKETPLACE — contexte produit ou commande Tchokos
+// ═════════════════════════════════════════════════════════════════════════════
+class _MarketplaceBanner extends StatelessWidget {
+  final Map<String, dynamic> data;
+  const _MarketplaceBanner({required this.data});
+
+  @override
+  Widget build(BuildContext context) {
+    final type = data['type'] as String? ?? 'product';
+    final isOrder = type == 'order';
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(8, 8, 8, 0),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFE3F2FD),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFF1976D2).withOpacity(0.3)),
+      ),
+      child: Row(
+        children: [
+          // Photo produit ou icône commande
+          if (!isOrder && data['productPhoto'] != null)
+            ClipRRect(
+              borderRadius: BorderRadius.circular(6),
+              child: Image.network(
+                data['productPhoto'] as String,
+                width: 48, height: 48, fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => _icon(),
+              ),
+            )
+          else
+            _icon(isOrder: isOrder),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  isOrder ? '📦 Commande ${data['orderRef']}' : '🛍️ ${data['productName'] ?? 'Produit'}',
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  isOrder
+                      ? '${data['orderStatus']} · ${_fmt((data['orderTotal'] as num?)?.toDouble() ?? 0)} FCFA'
+                      : '${_fmt((data['productPrice'] as num?)?.toDouble() ?? 0)} FCFA',
+                  style: const TextStyle(
+                      fontSize: 12, color: Color(0xFF1976D2),
+                      fontWeight: FontWeight.w600),
+                ),
+              ],
+            ),
+          ),
+          const Icon(Icons.chevron_right, color: Colors.grey, size: 18),
+        ],
+      ),
+    );
+  }
+
+  Widget _icon({bool isOrder = false}) => Container(
+        width: 48, height: 48,
+        decoration: BoxDecoration(
+          color: const Color(0xFF1976D2).withOpacity(0.1),
+          borderRadius: BorderRadius.circular(6),
+        ),
+        child: Icon(
+          isOrder ? Icons.receipt_long : Icons.shopping_bag_outlined,
+          color: const Color(0xFF1976D2), size: 24,
+        ),
+      );
+
+  String _fmt(double v) => v.toInt().toString().replaceAllMapped(
+      RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]} ');
 }
 
 // ═════════════════════════════════════════════════════════════════════════════

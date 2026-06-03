@@ -33,7 +33,19 @@ import '../../features/messages/screens/chat_screen.dart';
 import '../../features/profile/screens/profile_screen.dart';
 import '../../features/immobilier/screens/immobilier_screen.dart';
 import '../../features/moto/screens/moto_screen.dart';
-import '../../features/marketplace/screens/marketplace_screen.dart';
+import '../../features/marketplace/screens/marketplace_home_screen.dart';
+import '../../features/marketplace/screens/cart_screen.dart';
+import '../../features/marketplace/screens/checkout_screen.dart';
+import '../../features/marketplace/screens/my_orders_screen.dart';
+import '../../features/marketplace/screens/order_detail_screen.dart';
+import '../../features/marketplace/screens/boss_dashboard_screen.dart';
+import '../../features/marketplace/screens/vendor_dashboard_screen.dart';
+import '../../features/marketplace/screens/reseller_dashboard_screen.dart';
+import '../../features/marketplace/screens/tiktok_screen.dart';
+import '../../features/marketplace/screens/product_detail_screen.dart';
+import '../../features/marketplace/screens/vendor_products_screen.dart';
+import '../../features/marketplace/screens/vendor_product_form_screen.dart';
+import '../../features/marketplace/models/shop_product.dart';
 import '../../features/menagere/screens/menagere_screen.dart';
 import '../providers/auth_provider.dart';
 
@@ -91,6 +103,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
                 applicationId: extra?['applicationId'] as String?,
                 applicationData: extra?['applicationData'] as Map<String, dynamic>?,
                 quoteData: extra?['quoteData'] as Map<String, dynamic>?,
+                marketplaceData: extra?['marketplaceData'] as Map<String, dynamic>?,
               );
             },
           ),
@@ -170,7 +183,36 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(path: '/immobilier', builder: (c, s) => const ImmobilierScreen()),
       GoRoute(path: '/moto', builder: (c, s) => const MotoScreen()),
-      GoRoute(path: '/marketplace', builder: (c, s) => const MarketplaceScreen()),
+      GoRoute(
+        path: '/marketplace',
+        builder: (c, s) => MarketplaceHomeScreen(
+          source: s.uri.queryParameters['source'],
+          highlightProductId: s.uri.queryParameters['product'],
+        ),
+      ),
+      GoRoute(path: '/marketplace/cart', builder: (c, s) => const CartScreen()),
+      GoRoute(path: '/marketplace/checkout', builder: (c, s) => const CheckoutScreen()),
+      GoRoute(path: '/marketplace/orders', builder: (c, s) => const MyOrdersScreen()),
+      GoRoute(
+        path: '/marketplace/orders/:orderId',
+        builder: (c, s) => OrderDetailScreen(orderId: s.pathParameters['orderId']!),
+      ),
+      GoRoute(
+        path: '/marketplace/products/:productId',
+        builder: (c, s) => ProductDetailScreen(productId: s.pathParameters['productId']!),
+      ),
+      GoRoute(path: '/marketplace/boss', builder: (c, s) => const BossDashboardScreen()),
+      GoRoute(path: '/marketplace/vendor', builder: (c, s) => const VendorDashboardScreen()),
+      GoRoute(path: '/marketplace/reseller', builder: (c, s) => const ResellerDashboardScreen()),
+      GoRoute(path: '/marketplace/tiktok', builder: (c, s) => const TikTokScreen()),
+      GoRoute(path: '/marketplace/vendor/products', builder: (c, s) => const VendorProductsScreen()),
+      GoRoute(path: '/marketplace/vendor/products/new', builder: (c, s) => const VendorProductFormScreen()),
+      GoRoute(
+        path: '/marketplace/vendor/products/edit/:productId',
+        builder: (c, s) => VendorProductFormScreen(
+          product: s.extra as ShopProduct?,
+        ),
+      ),
       GoRoute(path: '/menagere', builder: (c, s) => const MenagereScreen()),
     ],
     errorBuilder: (context, state) => Scaffold(

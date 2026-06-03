@@ -150,6 +150,10 @@ class ApiClient {
 
   Future<Response> delete(String path) => _dio.delete(path);
 
+  /// Post multipart/form-data (upload photos produit, etc.)
+  Future<Response> postForm(String path, {required FormData data}) =>
+      uploadFile(path, data);
+
   /// Upload multipart — timeout plus long sur 3G
   Future<Response> uploadFile(String path, FormData formData) => _dio.post(
     path,

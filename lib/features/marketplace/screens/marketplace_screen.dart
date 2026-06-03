@@ -1,9 +1,11 @@
+// Ce fichier est conservé pour compatibilité mais n'est plus utilisé.
+// La route /marketplace pointe désormais sur MarketplaceHomeScreen.
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/api/api_client.dart';
 import '../../../core/theme/app_theme.dart';
 
-final productsProvider = FutureProvider.autoDispose<Map<String, dynamic>>((ref) async {
+final _legacyProductsProvider = FutureProvider.autoDispose<Map<String, dynamic>>((ref) async {
   final api = ref.read(apiClientProvider);
   final res = await api.get('/marketplace/products', params: {'limit': '20'});
   return Map<String, dynamic>.from(res.data);
@@ -29,7 +31,7 @@ class _MarketplaceScreenState extends ConsumerState<MarketplaceScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final productsAsync = ref.watch(productsProvider);
+    final productsAsync = ref.watch(_legacyProductsProvider);
 
     return Scaffold(
       appBar: AppBar(title: const Text('Marketplace'), actions: [

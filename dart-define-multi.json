@@ -1,0 +1,7 @@
+{
+  "MULTI_BOUTIQUE": "true",
+  "SHOP_ID": "9c71d236-66cd-4133-af37-9b809ca77757",
+  "SHOP_NAME": "Tchokos",
+  "API_URL": "http://51.83.40.138:3005/api/v1",
+  "WS_URL": "http://51.83.40.138:3005"
+}

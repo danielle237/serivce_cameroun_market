@@ -104,14 +104,38 @@ class _BannerItem extends StatelessWidget {
   final MarketplaceBanner banner;
   const _BannerItem({required this.banner});
 
+  bool get _hasAction =>
+      banner.actionType != 'none' && banner.actionValue != null;
+
+  String get _actionLabel {
+    switch (banner.actionType) {
+      case 'product':  return 'Voir le produit →';
+      case 'category': return 'Voir la catégorie →';
+      case 'url':      return 'En savoir plus →';
+      default:         return 'Découvrir →';
+    }
+  }
+
+  void _handleBannerTap(BuildContext context) {
+    if (!_hasAction) return;
+    switch (banner.actionType) {
+      case 'product':
+        context.push('/marketplace/products/${banner.actionValue}');
+        break;
+      case 'category':
+        // Naviguer vers marketplace avec filtre catégorie
+        context.go('/marketplace?category=${banner.actionValue}');
+        break;
+      case 'url':
+        // Ouvrir un lien externe (url_launcher)
+        break;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: () {
-        if (banner.linkProductId != null) {
-          context.go('/marketplace/product/${banner.linkProductId}');
-        }
-      },
+      onTap: () => _handleBannerTap(context),
       child: Container(
         decoration: BoxDecoration(
           gradient: banner.imageUrl == null
@@ -164,21 +188,19 @@ class _BannerItem extends StatelessWidget {
                 ),
               ),
             ],
-            if (banner.linkProductId != null) ...[
+            if (_hasAction) ...[
               const SizedBox(height: 10),
               Container(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 12, vertical: 5),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
                 decoration: BoxDecoration(
                   color: Colors.white.withOpacity(0.25),
                   borderRadius: BorderRadius.circular(20),
                   border: Border.all(color: Colors.white54),
                 ),
-                child: const Text(
-                  'Voir le produit →',
-                  style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 12,
+                child: Text(
+                  _actionLabel,
+                  style: const TextStyle(
+                      color: Colors.white, fontSize: 12,
                       fontWeight: FontWeight.w600),
                 ),
               ),

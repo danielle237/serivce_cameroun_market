@@ -1,3 +1,10 @@
+// Helper : PostgreSQL DECIMAL/NUMERIC arrive parfois en String
+double _toDouble(dynamic v) {
+  if (v == null) return 0.0;
+  if (v is num) return v.toDouble();
+  return double.tryParse(v.toString()) ?? 0.0;
+}
+
 // ── Statuts commande ──────────────────────────────────────────────────────────
 enum OrderStatus {
   pending,      // 🟡 En attente
@@ -30,16 +37,21 @@ extension OrderStatusExt on OrderStatus {
 }
 
 // ── Mode paiement ─────────────────────────────────────────────────────────────
-enum PaymentMethod { cash, mtnMomo, orangeMoney }
+enum PaymentMethod { cash, mtnMomo, orangeMoney, visa, mastercard }
 
 extension PaymentMethodExt on PaymentMethod {
   String get label {
     switch (this) {
-      case PaymentMethod.cash:        return '💵 Cash à la livraison';
+      case PaymentMethod.cash:        return '💵 Paiement à la livraison';
       case PaymentMethod.mtnMomo:     return '📱 MTN MoMo';
       case PaymentMethod.orangeMoney: return '🟠 Orange Money';
+      case PaymentMethod.visa:        return '💳 Carte Visa';
+      case PaymentMethod.mastercard:  return '💳 Carte Mastercard';
     }
   }
+
+  bool get isMobile => this == PaymentMethod.mtnMomo || this == PaymentMethod.orangeMoney;
+  bool get isCard   => this == PaymentMethod.visa || this == PaymentMethod.mastercard;
 }
 
 // ── Statut paiement ───────────────────────────────────────────────────────────
@@ -114,7 +126,7 @@ class OrderLine {
     variant1:     j['variant1'] as String?,
     variant2:     j['variant2'] as String?,
     qty:          j['qty'] as int,
-    unitPrice:    (j['unitPrice'] as num).toDouble(),
+    unitPrice:    _toDouble(j['unitPrice']),
     isPartial:    j['isPartial'] as bool? ?? false,
   );
 }
@@ -236,10 +248,9 @@ class Order {
     ),
     paymentProof:  j['paymentProof'] != null
         ? PaymentProof.fromJson(j['paymentProof']) : null,
-    totalAmount:   (j['totalAmount'] as num).toDouble(),
+    totalAmount:   _toDouble(j['totalAmount']),
     promoCode:     j['promoCode'] as String?,
-    discount:      j['discount'] != null
-        ? (j['discount'] as num).toDouble() : null,
+    discount:      j['discount'] != null ? _toDouble(j['discount']) : null,
     cancelReason:  j['cancelReason'] as String?,
     history:       (j['history'] as List? ?? [])
         .map((h) => OrderHistoryEntry.fromJson(h)).toList(),

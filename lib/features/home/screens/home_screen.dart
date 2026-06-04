@@ -391,9 +391,9 @@ class _ServiceCard extends ConsumerWidget {
       onTap: () {
         if (item.route == '/artisans/portfolio/me') {
           final userId = ref.read(authStateProvider).value?.user?['id'];
-          if (userId != null) context.go('/artisans/portfolio/$userId');
+          if (userId != null) context.push('/artisans/portfolio/$userId');
         } else {
-          context.go(item.route);
+          context.push(item.route);
         }
       },
       child: Stack(

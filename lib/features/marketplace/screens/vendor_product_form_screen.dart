@@ -119,7 +119,13 @@ class _VendorProductFormScreenState
   // ── Picker photos ─────────────────────────────────────────────────────────
   Future<void> _pickPhotos() async {
     final picker = ImagePicker();
-    final picked = await picker.pickMultiImage(imageQuality: 85);
+    // Redimensionner à 800px max et 80% qualité directement au pick
+    // (évite d'uploader des photos 12MP depuis les Android camerounais)
+    final picked = await picker.pickMultiImage(
+      imageQuality: 80,
+      maxWidth: 800,
+      maxHeight: 800,
+    );
     if (picked.isEmpty) return;
 
     final remaining = 5 - _existingPhotos.length - _newPhotos.length;
@@ -138,7 +144,9 @@ class _VendorProductFormScreenState
 
     for (final xfile in _newPhotos) {
       try {
-        FormData form;
+        // Les photos ont déjà été redimensionnées (800px max, 80% qualité)
+        // par image_picker au moment du pick — upload direct.
+        final FormData form;
         if (kIsWeb) {
           final bytes = await xfile.readAsBytes();
           form = FormData.fromMap({
@@ -146,8 +154,7 @@ class _VendorProductFormScreenState
           });
         } else {
           form = FormData.fromMap({
-            'file': await MultipartFile.fromFile(xfile.path,
-                filename: xfile.name),
+            'file': await MultipartFile.fromFile(xfile.path, filename: xfile.name),
           });
         }
         final res = await api.postForm('/media/image', data: form);

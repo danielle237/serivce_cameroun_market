@@ -7,6 +7,7 @@ import 'package:fl_chart/fl_chart.dart';
 import '../models/product.dart';
 import '../providers/marketplace_providers.dart';
 import '../providers/extras_providers.dart';
+import '../widgets/product_card.dart';
 import '../../../core/api/api_client.dart';
 import '../../../core/config/app_config.dart';
 
@@ -118,28 +119,43 @@ class _ProductDetailScreenState
                           itemCount: product.photos.length,
                           onPageChanged: (i) =>
                               setState(() => _currentPhoto = i),
-                          itemBuilder: (ctx, i) => Image.network(
-                            product.photos[i],
-                            fit: BoxFit.cover,
-                            errorBuilder: (_, __, ___) => Container(
-                              color: const Color(0xFF1976D2)
-                                  .withOpacity(0.08),
-                              child: Center(
-                                child: Text(product.category.emoji,
-                                    style: const TextStyle(
-                                        fontSize: 80)),
+                          itemBuilder: (ctx, i) => GestureDetector(
+                            // Tap → zoom plein écran
+                            onTap: () => _showPhotoZoom(ctx, product.photos, i),
+                            child: Image.network(
+                              product.photos[i],
+                              fit: BoxFit.cover,
+                              errorBuilder: (_, __, ___) => Container(
+                                color: const Color(0xFF1976D2).withOpacity(0.08),
+                                child: Center(child: Text(product.category.emoji,
+                                    style: const TextStyle(fontSize: 80))),
                               ),
                             ),
                           ),
                         )
                       : Container(
                           color: const Color(0xFF1976D2).withOpacity(0.08),
-                          child: Center(
-                            child: Text(product.category.emoji,
-                                style: const TextStyle(fontSize: 80)),
-                          ),
+                          child: Center(child: Text(product.category.emoji,
+                              style: const TextStyle(fontSize: 80))),
                         ),
                 ),
+                // Hint zoom
+                if (product.photos.isNotEmpty)
+                  Positioned(
+                    bottom: 48, right: 12,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: Colors.black45,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Row(mainAxisSize: MainAxisSize.min, children: [
+                        Icon(Icons.zoom_in, color: Colors.white, size: 14),
+                        SizedBox(width: 4),
+                        Text('Zoomer', style: TextStyle(color: Colors.white, fontSize: 11)),
+                      ]),
+                    ),
+                  ),
                 // Indicateurs photos
                 if (product.photos.length > 1)
                   Positioned(
@@ -418,6 +434,12 @@ class _ProductDetailScreenState
                 ),
               ],
 
+              // ── Produits similaires ────────────────────────────────────
+              _SimilarProductsSection(
+                category: product.category.name,
+                excludeId: product.id,
+              ),
+
               // ── Historique prix ────────────────────────────────────────
               _PriceHistorySection(productId: widget.productId),
 
@@ -479,8 +501,10 @@ class _ProductDetailScreenState
                           action: SnackBarAction(
                             label: 'Voir panier',
                             textColor: Colors.white,
-                            onPressed: () =>
-                                context.push('/marketplace/cart'),
+                            onPressed: () {
+                              ScaffoldMessenger.of(context).clearSnackBars();
+                              context.push('/marketplace/cart');
+                            },
                           ),
                         ),
                       );
@@ -672,6 +696,41 @@ class _ProductDetailScreenState
   // Getter pour productAsync dans le build
   AsyncValue<Product> get productAsync =>
       ref.watch(productDetailProvider(widget.productId));
+
+  // Zoom plein écran avec InteractiveViewer (pinch to zoom)
+  void _showPhotoZoom(BuildContext ctx, List<String> photos, int initial) {
+    showDialog(
+      context: ctx,
+      barrierColor: Colors.black87,
+      builder: (_) => Dialog(
+        backgroundColor: Colors.transparent,
+        insetPadding: EdgeInsets.zero,
+        child: Stack(children: [
+          PageView.builder(
+            controller: PageController(initialPage: initial),
+            itemCount: photos.length,
+            itemBuilder: (_, i) => InteractiveViewer(
+              minScale: 0.8,
+              maxScale: 5.0,
+              child: Image.network(photos[i], fit: BoxFit.contain),
+            ),
+          ),
+          Positioned(
+            top: 40, right: 16,
+            child: GestureDetector(
+              onTap: () => Navigator.pop(ctx),
+              child: Container(
+                width: 36, height: 36,
+                decoration: BoxDecoration(
+                    color: Colors.black54, shape: BoxShape.circle),
+                child: const Icon(Icons.close, color: Colors.white, size: 20),
+              ),
+            ),
+          ),
+        ]),
+      ),
+    );
+  }
 
   // Ouvre le chat avec Tokos en passant le contexte produit
   Future<void> _openChat(Product product) async {
@@ -929,6 +988,69 @@ class _FavoriteButtonState extends ConsumerState<_FavoriteButton> {
     } catch (_) {} finally {
       if (mounted) setState(() => _loading = false);
     }
+  }
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// PRODUITS SIMILAIRES
+// ═════════════════════════════════════════════════════════════════════════════
+class _SimilarProductsSection extends ConsumerWidget {
+  final String category;
+  final String excludeId;
+  const _SimilarProductsSection({required this.category, required this.excludeId});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final shopId    = ref.watch(activeShopIdProvider);
+    final productsAsync = ref.watch(productsProvider(shopId));
+
+    return productsAsync.when(
+      loading: () => const SizedBox.shrink(),
+      error: (_, __) => const SizedBox.shrink(),
+      data: (all) {
+        final similar = all
+            .where((p) => p.category.name == category && p.id != excludeId && p.isActive)
+            .toList()
+          ..sort((a, b) => b.orderCount.compareTo(a.orderCount));
+
+        if (similar.isEmpty) return const SizedBox.shrink();
+
+        return Container(
+          margin: const EdgeInsets.only(top: 8),
+          color: Colors.white,
+          padding: const EdgeInsets.fromLTRB(16, 16, 0, 16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Padding(
+                padding: EdgeInsets.only(right: 16),
+                child: Text('🛍️ Vous aimerez aussi',
+                    style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
+              ),
+              const SizedBox(height: 12),
+              SizedBox(
+                height: 220,
+                child: ListView.builder(
+                  scrollDirection: Axis.horizontal,
+                  itemCount: similar.take(6).length,
+                  itemBuilder: (ctx, i) => SizedBox(
+                    width: 150,
+                    child: Padding(
+                      padding: const EdgeInsets.only(right: 10),
+                      child: ProductCard(
+                        product: similar[i],
+                        onTap: () => context.push(
+                            '/marketplace/products/${similar[i].id}'),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
   }
 }
 

@@ -70,6 +70,21 @@ class MarketplaceBanner {
     required this.createdAt,
   });
 
+  // ── Getters pour la navigation depuis le carousel ────────────────────────
+  /// 'product' | 'category' | 'url' | 'none'
+  String get actionType {
+    if (linkProductId != null) return 'product';
+    if (linkCategory != null)  return 'category';
+    return 'none';
+  }
+
+  /// Valeur associée à l'action (productId, nom de catégorie, ou null)
+  String? get actionValue {
+    if (linkProductId != null) return linkProductId;
+    if (linkCategory != null)  return linkCategory;
+    return null;
+  }
+
   bool get isCurrentlyActive {
     if (!isActive) return false;
     final now = DateTime.now();

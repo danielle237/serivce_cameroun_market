@@ -33,7 +33,8 @@ class ApiClient {
       headers: {
         'Content-Type': 'application/json',
         'Accept': 'application/json',
-        'Accept-Encoding': 'gzip, deflate, br', // compression → -60% data
+        // Accept-Encoding géré automatiquement par dart:io
+        // (ne pas le forcer manuellement → évite FormatException sur Android)
       },
     ));
 
@@ -149,6 +150,8 @@ class ApiClient {
   }
 
   Future<Response> delete(String path) => _dio.delete(path);
+
+  Future<Response> put(String path, {dynamic data}) => _dio.put(path, data: data);
 
   /// Post multipart/form-data (upload photos produit, etc.)
   Future<Response> postForm(String path, {required FormData data}) =>

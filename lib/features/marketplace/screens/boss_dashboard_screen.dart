@@ -118,6 +118,18 @@ class BossDashboardScreen extends ConsumerWidget {
                     color: Colors.purple,
                     onTap: () => context.push('/marketplace/tiktok'),
                   ),
+                  _ShortcutTile(
+                    icon: Icons.star_outline,
+                    label: 'Config fidélité',
+                    color: Colors.amber,
+                    onTap: () => context.push('/marketplace/loyalty/config'),
+                  ),
+                  _ShortcutTile(
+                    icon: Icons.notifications_outlined,
+                    label: 'Notifications',
+                    color: Colors.teal,
+                    onTap: () => context.push('/marketplace/notifications/prefs'),
+                  ),
                 ],
               ),
             ],

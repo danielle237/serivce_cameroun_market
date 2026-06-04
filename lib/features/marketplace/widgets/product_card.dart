@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import '../models/product.dart';
 
 class ProductCard extends StatelessWidget {
@@ -15,161 +16,189 @@ class ProductCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final outOfStock = product.totalStock == 0;
+    final discount = product.oldPrice != null
+        ? ((product.oldPrice! - product.retailPrice) / product.oldPrice! * 100).round()
+        : 0;
+
     return GestureDetector(
       onTap: onTap,
       child: Container(
         decoration: BoxDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.circular(14),
-          border: isHighlighted
-              ? Border.all(color: const Color(0xFF1976D2), width: 2)
-              : Border.all(color: Colors.grey.shade100),
+          borderRadius: BorderRadius.circular(16),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.06),
-              blurRadius: 8,
+              color: isHighlighted
+                  ? const Color(0xFF1976D2).withOpacity(0.2)
+                  : Colors.black.withOpacity(0.06),
+              blurRadius: isHighlighted ? 12 : 8,
               offset: const Offset(0, 3),
             ),
           ],
+          border: isHighlighted
+              ? Border.all(color: const Color(0xFF1976D2), width: 2)
+              : null,
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // ── Photo produit ──────────────────────────────────────────
+            // ── Photo ────────────────────────────────────────────────────
             Stack(children: [
               ClipRRect(
-                borderRadius: const BorderRadius.vertical(
-                    top: Radius.circular(14)),
-                child: product.photos.isNotEmpty
-                    ? Image.network(
-                        product.photos.first,
-                        height: 140,
-                        width: double.infinity,
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) =>
-                            _PhotoPlaceholder(product: product),
-                      )
-                    : _PhotoPlaceholder(product: product),
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+                child: AspectRatio(
+                  aspectRatio: 1,
+                  child: product.photos.isNotEmpty
+                      ? CachedNetworkImage(
+                          imageUrl: product.photos.first,
+                          fit: BoxFit.cover,
+                          placeholder: (_, __) => _Shimmer(),
+                          errorWidget: (_, __, ___) => _Placeholder(product: product),
+                        )
+                      : _Placeholder(product: product),
+                ),
               ),
 
-              // Badge vedette
-              if (product.badge != ProductBadge.none)
-                Positioned(
-                  top: 8, left: 8,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: _badgeColor(product.badge),
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Text(
-                      product.badge.label,
-                      style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 9,
-                          fontWeight: FontWeight.bold),
-                    ),
-                  ),
-                ),
-
-              // Stock épuisé
-              if (!product.isLowStock && product.totalStock == 0)
+              // Overlay stock épuisé
+              if (outOfStock)
                 Positioned.fill(
                   child: ClipRRect(
-                    borderRadius: const BorderRadius.vertical(
-                        top: Radius.circular(14)),
+                    borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
                     child: Container(
-                      color: Colors.black45,
+                      color: Colors.black54,
                       child: const Center(
                         child: Text('ÉPUISÉ',
                             style: TextStyle(
                                 color: Colors.white,
                                 fontWeight: FontWeight.bold,
+                                letterSpacing: 2,
                                 fontSize: 14)),
                       ),
                     ),
                   ),
                 ),
 
-              // TikTok highlight
-              if (isHighlighted)
+              // Badge en haut à gauche
+              if (product.badge != ProductBadge.none && !outOfStock)
+                Positioned(
+                  top: 8, left: 8,
+                  child: _Badge(label: product.badge.label, color: _badgeColor),
+                ),
+
+              // % réduction en haut à droite
+              if (discount > 0 && !outOfStock)
                 Positioned(
                   top: 8, right: 8,
                   child: Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 8, vertical: 4),
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
                     decoration: BoxDecoration(
-                      color: Colors.black87,
-                      borderRadius: BorderRadius.circular(20),
+                      color: Colors.red,
+                      borderRadius: BorderRadius.circular(6),
                     ),
-                    child: const Text('🎵 TikTok',
-                        style: TextStyle(
+                    child: Text('-$discount%',
+                        style: const TextStyle(
                             color: Colors.white,
-                            fontSize: 9,
+                            fontSize: 10,
                             fontWeight: FontWeight.bold)),
+                  ),
+                ),
+
+              // TikTok
+              if (isHighlighted)
+                Positioned(
+                  bottom: 8, left: 8,
+                  child: _Badge(label: '🎵 TikTok', color: Colors.black87),
+                ),
+
+              // Stock bas
+              if (product.isLowStock && !outOfStock)
+                Positioned(
+                  bottom: 8, left: 8,
+                  child: _Badge(label: '⚡ ${product.totalStock} restants',
+                      color: Colors.orange),
+                ),
+
+              // Note
+              if (product.rating > 0)
+                Positioned(
+                  bottom: 8, right: 8,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: Colors.black54,
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Row(mainAxisSize: MainAxisSize.min, children: [
+                      const Icon(Icons.star, color: Colors.amber, size: 11),
+                      const SizedBox(width: 2),
+                      Text(product.rating.toStringAsFixed(1),
+                          style: const TextStyle(
+                              color: Colors.white, fontSize: 10,
+                              fontWeight: FontWeight.bold)),
+                    ]),
                   ),
                 ),
             ]),
 
-            // ── Infos produit ──────────────────────────────────────────
+            // ── Infos ─────────────────────────────────────────────────────
             Padding(
-              padding: const EdgeInsets.all(10),
+              padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Nom
-                  Text(
-                    product.name,
-                    style: const TextStyle(
-                        fontWeight: FontWeight.w600,
-                        fontSize: 13),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  const SizedBox(height: 4),
+                  Text(product.name,
+                      style: const TextStyle(
+                          fontWeight: FontWeight.w600, fontSize: 13,
+                          height: 1.3),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis),
+                  const SizedBox(height: 6),
 
                   // Prix
-                  Row(children: [
-                    Text(
-                      '${_fmt(product.retailPrice)} FCFA',
-                      style: const TextStyle(
-                          color: Color(0xFF1976D2),
-                          fontWeight: FontWeight.w800,
-                          fontSize: 14),
-                    ),
-                    if (product.oldPrice != null) ...[
-                      const SizedBox(width: 6),
-                      Text(
-                        '${_fmt(product.oldPrice!)}',
-                        style: TextStyle(
-                          color: Colors.grey.shade400,
-                          fontSize: 11,
-                          decoration: TextDecoration.lineThrough,
-                        ),
-                      ),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Text('${_fmt(product.retailPrice)}',
+                          style: const TextStyle(
+                              color: Color(0xFF1976D2),
+                              fontWeight: FontWeight.w800,
+                              fontSize: 15)),
+                      const Text(' FCFA',
+                          style: TextStyle(
+                              color: Color(0xFF1976D2),
+                              fontWeight: FontWeight.w600,
+                              fontSize: 10)),
                     ],
-                  ]),
+                  ),
 
-                  // Stock bas
-                  if (product.isLowStock) ...[
-                    const SizedBox(height: 4),
-                    Text(
-                      '⚡ Plus que ${product.totalStock} en stock',
-                      style: const TextStyle(
-                          color: Colors.orange,
-                          fontSize: 10,
-                          fontWeight: FontWeight.w600),
-                    ),
+                  if (product.oldPrice != null) ...[
+                    Text('${_fmt(product.oldPrice!)} FCFA',
+                        style: TextStyle(
+                            color: Colors.grey.shade400,
+                            fontSize: 10,
+                            decoration: TextDecoration.lineThrough)),
                   ],
 
-                  // Catégorie
-                  const SizedBox(height: 4),
-                  Text(
-                    '${product.category.emoji} ${product.category.label}',
-                    style: TextStyle(
-                        color: Colors.grey.shade500, fontSize: 10),
-                  ),
+                  // Prix gros dispo
+                  if (product.priceTiers.isNotEmpty) ...[
+                    const SizedBox(height: 4),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: Colors.green.shade50,
+                        borderRadius: BorderRadius.circular(4),
+                        border: Border.all(color: Colors.green.shade200),
+                      ),
+                      child: Text(
+                        '💼 Prix gros dispo',
+                        style: TextStyle(
+                            fontSize: 9,
+                            color: Colors.green.shade700,
+                            fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -179,8 +208,8 @@ class ProductCard extends StatelessWidget {
     );
   }
 
-  Color _badgeColor(ProductBadge badge) {
-    switch (badge) {
+  Color get _badgeColor {
+    switch (product.badge) {
       case ProductBadge.featured:   return const Color(0xFFFFB300);
       case ProductBadge.trending:   return Colors.red;
       case ProductBadge.popular:    return Colors.blue;
@@ -192,26 +221,49 @@ class ProductCard extends StatelessWidget {
     }
   }
 
-  String _fmt(double v) {
-    return v.toInt().toString().replaceAllMapped(
-        RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]} ');
-  }
+  String _fmt(double v) => v.toInt().toString().replaceAllMapped(
+      RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]} ');
 }
 
-class _PhotoPlaceholder extends StatelessWidget {
-  final Product product;
-  const _PhotoPlaceholder({required this.product});
+class _Badge extends StatelessWidget {
+  final String label;
+  final Color color;
+  const _Badge({required this.label, required this.color});
 
   @override
-  Widget build(BuildContext context) {
-    return Container(
-      height: 140,
-      width: double.infinity,
-      color: const Color(0xFF1976D2).withOpacity(0.08),
-      child: Center(
-        child: Text(product.category.emoji,
-            style: const TextStyle(fontSize: 48)),
-      ),
-    );
-  }
+  Widget build(BuildContext context) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
+        decoration: BoxDecoration(
+          color: color,
+          borderRadius: BorderRadius.circular(6),
+        ),
+        child: Text(label,
+            style: const TextStyle(
+                color: Colors.white, fontSize: 9,
+                fontWeight: FontWeight.bold)),
+      );
+}
+
+class _Placeholder extends StatelessWidget {
+  final Product product;
+  const _Placeholder({required this.product});
+
+  @override
+  Widget build(BuildContext context) => Container(
+        color: const Color(0xFFEEF2FF),
+        child: Center(
+          child: Text(product.category.emoji,
+              style: const TextStyle(fontSize: 52)),
+        ),
+      );
+}
+
+class _Shimmer extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) => Container(
+        color: Colors.grey.shade100,
+        child: const Center(
+          child: CircularProgressIndicator(strokeWidth: 2),
+        ),
+      );
 }

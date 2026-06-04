@@ -1,7 +1,9 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/api/api_client.dart';
+import '../../../core/providers/connectivity_provider.dart';
 import '../models/order.dart';
 import '../providers/marketplace_providers.dart';
 
@@ -22,13 +24,121 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
   bool _promoApplied = false;
   String? _promoError;
 
+  // ── Réservation stock (15 min) ───────────────────────────────────────────
+  String? _reservationId;
+  Timer? _reservationTimer;
+  Duration _reservationRemaining = const Duration(minutes: 15);
+  bool _reservationExpired = false;
+  bool _reservationConflict = false; // stock pris par un autre client
+
+  @override
+  void initState() {
+    super.initState();
+    _reserveStock();
+  }
+
   @override
   void dispose() {
     _noteCtrl.dispose();
     _promoCtrl.dispose();
     _momoRefCtrl.dispose();
     _momoTimeCtrl.dispose();
+    _reservationTimer?.cancel();
+    // Libérer la réservation si l'utilisateur quitte sans commander
+    if (_reservationId != null) _releaseReservation();
     super.dispose();
+  }
+
+  Future<void> _reserveStock() async {
+    final cart = ref.read(cartProvider);
+    final api  = ref.read(apiClientProvider);
+    try {
+      final res = await api.post('/marketplace/orders/reserve', data: {
+        'shopId': cart.shopId,
+        'items': cart.items.map((item) => {
+          'productId': item.product.id,
+          'variantId': item.variantId,
+          'qty':       item.qty,
+        }).toList(),
+      });
+      final data = res.data as Map<String, dynamic>;
+      final conflict = data['conflict'] as bool? ?? false;
+
+      if (conflict) {
+        // Stock insuffisant — un autre client a pris les dernières pièces
+        final conflictItems = data['conflictItems'] as List? ?? [];
+        if (mounted) {
+          setState(() => _reservationConflict = true);
+          _showConflictDialog(conflictItems);
+        }
+        return;
+      }
+
+      _reservationId = data['reservationId'] as String?;
+      _startReservationTimer();
+    } catch (_) {
+      // En cas d'erreur réseau, on laisse passer (le backend revalide au POST /orders)
+    }
+  }
+
+  void _startReservationTimer() {
+    _reservationTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!mounted) return;
+      setState(() {
+        if (_reservationRemaining.inSeconds > 0) {
+          _reservationRemaining -= const Duration(seconds: 1);
+        } else {
+          _reservationExpired = true;
+          _reservationTimer?.cancel();
+        }
+      });
+    });
+  }
+
+  Future<void> _releaseReservation() async {
+    final id = _reservationId;
+    if (id == null) return;
+    _reservationId = null;
+    try {
+      final api = ref.read(apiClientProvider);
+      await api.delete('/marketplace/orders/reserve/$id');
+    } catch (_) {}
+  }
+
+  void _showConflictDialog(List conflictItems) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => AlertDialog(
+        title: const Text('⚠️ Stock modifié'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Certains articles ont été achetés par quelqu\'un d\'autre avant vous :'),
+            const SizedBox(height: 8),
+            ...conflictItems.map((item) => Text(
+              '• ${item['productName']} — demandé: ${item['requestedQty']}, disponible: ${item['availableQty']}',
+              style: const TextStyle(fontSize: 13),
+            )),
+            const SizedBox(height: 8),
+            const Text('Retournez au panier pour ajuster les quantités.',
+                style: TextStyle(color: Colors.grey)),
+          ],
+        ),
+        actions: [
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(context);
+              context.pop(); // retour panier
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF1976D2),
+                foregroundColor: Colors.white),
+            child: const Text('Modifier le panier'),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -43,7 +153,41 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
         foregroundColor: Colors.black87,
         elevation: 0,
       ),
-      body: SingleChildScrollView(
+      body: Column(
+        children: [
+          // ── Bandeau hors ligne ──────────────────────────────────────────
+          Consumer(builder: (ctx, ref, _) {
+            final isOnline = ref.watch(isOnlineProvider);
+            if (isOnline) return const SizedBox.shrink();
+            return Container(
+              width: double.infinity,
+              color: Colors.red,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              child: const Row(children: [
+                Icon(Icons.wifi_off, color: Colors.white, size: 16),
+                SizedBox(width: 8),
+                Expanded(child: Text(
+                  '📵 Hors ligne — Impossible de passer commande sans connexion',
+                  style: TextStyle(color: Colors.white, fontSize: 12),
+                )),
+              ]),
+            );
+          }),
+
+          // ── Bandeau réservation stock ────────────────────────────────────
+          if (_reservationExpired)
+            _ReservationBanner(
+              label: '⏰ Réservation expirée — rechargez le panier',
+              color: Colors.red.shade700,
+              icon: Icons.timer_off_outlined,
+            )
+          else if (_reservationId != null)
+            _ReservationBanner(
+              label: '🔒 Stock réservé ${_fmtDuration(_reservationRemaining)}',
+              color: Colors.green.shade700,
+              icon: Icons.lock_clock_outlined,
+            ),
+          Expanded(child: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -130,9 +274,8 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
             ),
             const SizedBox(height: 12),
 
-            // Preuve MoMo
-            if (_paymentMethod == PaymentMethod.mtnMomo ||
-                _paymentMethod == PaymentMethod.orangeMoney) ...[
+            // Preuve MoMo / Carte
+            if (_paymentMethod.isMobile) ...[
               _Section(
                 title: '📱 Preuve de paiement',
                 child: Column(
@@ -259,12 +402,14 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
             const SizedBox(height: 80),
           ],
         ),
+      )),  // Expanded + SingleChildScrollView
+        ],
       ),
       bottomNavigationBar: Padding(
         padding: EdgeInsets.fromLTRB(
             16, 0, 16, MediaQuery.of(context).padding.bottom + 12),
         child: ElevatedButton(
-          onPressed: _loading ? null : _placeOrder,
+          onPressed: (_loading || _reservationExpired || _reservationConflict) ? null : _placeOrder,
           style: ElevatedButton.styleFrom(
             backgroundColor: const Color(0xFF2E7D32),
             foregroundColor: Colors.white,
@@ -317,13 +462,21 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
   }
 
   Future<void> _placeOrder() async {
+    // Bloquer si hors ligne
+    if (!ref.read(isOnlineProvider)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('📵 Hors ligne — impossible de commander sans connexion'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
     final cart = ref.read(cartProvider);
     if (cart.isEmpty) return;
 
     // Validation MoMo
-    if ((_paymentMethod == PaymentMethod.mtnMomo ||
-            _paymentMethod == PaymentMethod.orangeMoney) &&
-        _momoRefCtrl.text.trim().isEmpty) {
+    if (_paymentMethod.isMobile && _momoRefCtrl.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Veuillez saisir la référence MoMo'),
@@ -344,6 +497,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
         if (cart.promoCode != null) 'promoCode': cart.promoCode,
         if (cart.discount != null) 'discount': cart.discount,
         if (_noteCtrl.text.isNotEmpty) 'note': _noteCtrl.text.trim(),
+        if (_reservationId != null) 'reservationId': _reservationId,
         if (_momoRefCtrl.text.isNotEmpty)
           'paymentProof': {
             'reference': _momoRefCtrl.text.trim(),
@@ -353,6 +507,11 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
 
       final res = await api.post('/marketplace/orders', data: body);
       final orderId = res.data['id'] as String;
+
+      // La commande est passée — la réservation est confirmée côté backend,
+      // on ne la libère plus manuellement.
+      _reservationId = null;
+      _reservationTimer?.cancel();
 
       ref.read(cartProvider.notifier).clear();
 
@@ -377,6 +536,33 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
       .toStringAsFixed(0)
       .replaceAllMapped(
           RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]} ');
+
+  String _fmtDuration(Duration d) {
+    final m = d.inMinutes.remainder(60).toString().padLeft(2, '0');
+    final s = d.inSeconds.remainder(60).toString().padLeft(2, '0');
+    return '$m:$s';
+  }
+}
+
+// ── Bandeau réservation stock ─────────────────────────────────────────────────
+class _ReservationBanner extends StatelessWidget {
+  final String label;
+  final Color color;
+  final IconData icon;
+  const _ReservationBanner({required this.label, required this.color, required this.icon});
+
+  @override
+  Widget build(BuildContext context) => Container(
+    width: double.infinity,
+    color: color,
+    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+    child: Row(children: [
+      Icon(icon, color: Colors.white, size: 16),
+      const SizedBox(width: 8),
+      Text(label, style: const TextStyle(color: Colors.white,
+          fontSize: 12, fontWeight: FontWeight.w600)),
+    ]),
+  );
 }
 
 // ── Section helper ────────────────────────────────────────────────────────────

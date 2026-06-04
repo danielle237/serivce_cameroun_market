@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/api/api_client.dart';
 import '../models/order.dart';
+import '../models/product.dart';
 import '../providers/marketplace_providers.dart';
 
 import '../../../core/config/app_config.dart';
@@ -190,6 +191,26 @@ class _OrderDetail extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 24),
+
+          // Facture PDF
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: () => context.push('/marketplace/orders/${order.id}/invoice'),
+              icon: const Icon(Icons.receipt_outlined),
+              label: const Text('📄 Voir la facture PDF'),
+              style: OutlinedButton.styleFrom(
+                minimumSize: const Size.fromHeight(48),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10)),
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
+
+          // Re-commander
+          _ReorderButton(order: order),
+          const SizedBox(height: 10),
 
           // Contacter Tchokos
           SizedBox(
@@ -419,4 +440,131 @@ class _Row extends StatelessWidget {
           ],
         ),
       );
+}
+
+// ── Bouton re-commander ───────────────────────────────────────────────────────
+class _ReorderButton extends ConsumerStatefulWidget {
+  final Order order;
+  const _ReorderButton({required this.order});
+
+  @override
+  ConsumerState<_ReorderButton> createState() => _ReorderButtonState();
+}
+
+class _ReorderButtonState extends ConsumerState<_ReorderButton> {
+  bool _loading = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: double.infinity,
+      child: ElevatedButton.icon(
+        onPressed: _loading ? null : _reorder,
+        icon: _loading
+            ? const SizedBox(width: 16, height: 16,
+                child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+            : const Icon(Icons.replay),
+        label: const Text('🔄 Re-commander le même panier'),
+        style: ElevatedButton.styleFrom(
+          backgroundColor: const Color(0xFF2E7D32),
+          foregroundColor: Colors.white,
+          minimumSize: const Size.fromHeight(48),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _reorder() async {
+    setState(() => _loading = true);
+    try {
+      final api = ref.read(apiClientProvider);
+      final res = await api.get('/marketplace/orders/${widget.order.id}/reorder');
+      final data = Map<String, dynamic>.from(res.data);
+      final lines = data['lines'] as List? ?? [];
+
+      // Vérifier si des articles ont changé de prix ou sont indisponibles
+      final unavailable = lines.where((l) => l['available'] == false).toList();
+      final priceChanged = lines.where((l) => l['priceChanged'] == true).toList();
+
+      if (unavailable.isNotEmpty || priceChanged.isNotEmpty) {
+        if (!mounted) return;
+        final proceed = await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('⚠️ Vérification du panier'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (unavailable.isNotEmpty) ...[
+                  const Text('Articles indisponibles :',
+                      style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
+                  ...unavailable.map((l) => Text('• ${l['productName']}',
+                      style: const TextStyle(color: Colors.red))),
+                  const SizedBox(height: 8),
+                ],
+                if (priceChanged.isNotEmpty) ...[
+                  const Text('Prix mis à jour :',
+                      style: TextStyle(color: Colors.orange, fontWeight: FontWeight.bold)),
+                  ...priceChanged.map((l) => Text(
+                      '• ${l['productName']} : ${_fmt(l['currentPrice'])} FCFA',
+                      style: const TextStyle(color: Colors.orange))),
+                ],
+                const SizedBox(height: 8),
+                const Text('Continuer avec les articles disponibles ?'),
+              ],
+            ),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(ctx, false),
+                  child: const Text('Annuler')),
+              ElevatedButton(onPressed: () => Navigator.pop(ctx, true),
+                  child: const Text('Continuer')),
+            ],
+          ),
+        );
+        if (proceed != true) return;
+      }
+
+      // Ajouter les articles disponibles au panier
+      final cart = ref.read(cartProvider.notifier);
+      final productsAvailable = lines.where((l) => l['available'] == true).toList();
+
+      for (final line in productsAvailable) {
+        // On recrée un Product minimal depuis les données de la ligne
+        final productRes = await api.get('/marketplace/products/${line['productId']}');
+        final product = Product.fromJson(Map<String, dynamic>.from(productRes.data));
+        cart.addItem(product,
+          variant1: line['variant1'] as String?,
+          variant2: line['variant2'] as String?,
+          qty: line['qty'] as int? ?? 1,
+        );
+      }
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('✅ ${productsAvailable.length} article(s) ajouté(s) au panier'),
+            backgroundColor: Colors.green,
+            action: SnackBarAction(
+              label: 'Voir panier',
+              textColor: Colors.white,
+              onPressed: () => context.push('/marketplace/cart'),
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Erreur : $e')));
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  String _fmt(dynamic v) {
+    final d = double.tryParse('$v') ?? 0.0;
+    return d.toInt().toString().replaceAllMapped(
+        RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]} ');
+  }
 }

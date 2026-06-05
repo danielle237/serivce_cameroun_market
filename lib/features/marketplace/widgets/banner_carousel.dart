@@ -124,7 +124,7 @@ class _BannerItem extends StatelessWidget {
         break;
       case 'category':
         // Naviguer vers marketplace avec filtre catégorie
-        context.go('/marketplace?category=${banner.actionValue}');
+        context.push('/marketplace?category=${banner.actionValue}');
         break;
       case 'url':
         // Ouvrir un lien externe (url_launcher)

@@ -5,6 +5,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:intl/intl.dart';
 import '../../../core/api/api_client.dart';
 import '../../../core/theme/app_theme.dart';
+import 'artisans_home_screen.dart' show artisanRequestsProvider;
 
 // ── Spécialités avec icône + couleur ─────────────────────────────────────────
 class _Specialty {
@@ -131,8 +132,10 @@ class _ArtisanRequestScreenState extends ConsumerState<ArtisanRequestScreen> {
       });
       if (mounted) {
         _snack('✅ Demande publiée ! Les artisans vont vous contacter.', Colors.green);
+        // Invalider le provider pour forcer le rechargement immédiat
+        ref.invalidate(artisanRequestsProvider);
         await Future.delayed(const Duration(seconds: 1));
-        if (mounted) context.go('/artisans');
+        if (mounted) context.pop(); // retour à la liste artisans
       }
     } catch (e) {
       _snack('Erreur: $e', Colors.red);

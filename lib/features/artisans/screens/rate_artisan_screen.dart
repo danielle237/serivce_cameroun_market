@@ -71,7 +71,7 @@ class _RateArtisanScreenState extends ConsumerState<RateArtisanScreen> {
         style: TextStyle(color: Colors.grey), textAlign: TextAlign.center),
     const SizedBox(height: 32),
     ElevatedButton(
-      onPressed: () => context.go('/artisans'),
+      onPressed: () => context.push('/artisans'),
       style: ElevatedButton.styleFrom(
         backgroundColor: Colors.orange.shade700, foregroundColor: Colors.white,
         padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 14),
@@ -169,7 +169,7 @@ class _RateArtisanScreenState extends ConsumerState<RateArtisanScreen> {
       ),
       const SizedBox(height: 10),
       Center(child: TextButton(
-        onPressed: () => context.go('/artisans'),
+        onPressed: () => context.push('/artisans'),
         child: const Text('Passer', style: TextStyle(color: Colors.grey)),
       )),
     ]),

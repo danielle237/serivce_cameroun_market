@@ -78,7 +78,7 @@ class ProfileScreen extends ConsumerWidget {
               color: AppColors.error,
               onTap: () async {
                 await ref.read(authStateProvider.notifier).logout();
-                if (context.mounted) context.go('/auth/welcome');
+                if (context.mounted) context.push('/auth/welcome');
               },
             ),
             const SizedBox(height: 32),

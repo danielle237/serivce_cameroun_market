@@ -41,7 +41,7 @@ class EducationHomeScreen extends ConsumerWidget {
             IconButton(
               icon: const Icon(Icons.calendar_view_week_outlined),
               tooltip: 'Planning semainier',
-              onPressed: () => context.go('/education/schedule'),
+              onPressed: () => context.push('/education/schedule'),
             ),
             IconButton(
               icon: const Icon(Icons.add_circle_outline),
@@ -53,12 +53,12 @@ class EducationHomeScreen extends ConsumerWidget {
             IconButton(
               icon: const Icon(Icons.calendar_view_week_outlined),
               tooltip: 'Planning des cours',
-              onPressed: () => context.go('/education/schedule-parent'),
+              onPressed: () => context.push('/education/schedule-parent'),
             ),
             IconButton(
               icon: const Icon(Icons.receipt_long_outlined),
               tooltip: 'Récapitulatif mensuel',
-              onPressed: () => context.go('/education/billing'),
+              onPressed: () => context.push('/education/billing'),
             ),
             // Accès direct aux cahiers de suivi des élèves
             IconButton(
@@ -78,7 +78,7 @@ class EducationHomeScreen extends ConsumerWidget {
                 }
                 // Si un seul contrat → y aller directement
                 if (withContract.length == 1) {
-                  context.go('/education/notebook/${withContract.first['contractId']}',
+                  context.push('/education/notebook/${withContract.first['contractId']}',
                       extra: {'studentName': withContract.first['providerName'] ?? 'Enseignant'});
                   return;
                 }
@@ -95,12 +95,12 @@ class EducationHomeScreen extends ConsumerWidget {
           IconButton(
             icon: const Icon(Icons.groups_outlined),
             tooltip: 'Cours en groupe',
-            onPressed: () => context.go('/education/groups'),
+            onPressed: () => context.push('/education/groups'),
           ),
           IconButton(
             icon: const Icon(Icons.person_search),
             tooltip: isTeacher ? 'Voir les annonces' : 'Chercher un enseignant',
-            onPressed: () => context.go('/education/requests'),
+            onPressed: () => context.push('/education/requests'),
           ),
           IconButton(
             icon: const Icon(Icons.refresh),
@@ -350,7 +350,7 @@ class _SessionCard extends StatelessWidget {
       child: InkWell(
         borderRadius: BorderRadius.circular(14),
         onTap: ['in_progress', 'scheduled'].contains(session['status'])
-            ? () => context.go('/education/session/${session['id']}')
+            ? () => context.push('/education/session/${session['id']}')
             : null,
         child: Padding(
           padding: const EdgeInsets.all(16),
@@ -370,8 +370,8 @@ class _SessionCard extends StatelessWidget {
               ),
               const Spacer(),
               Text(
-                session['session_date'] != null
-                    ? DateFormat('dd/MM/yyyy').format(DateTime.tryParse(session['session_date'].toString()) ?? DateTime.now())
+                session['sessionDate'] != null
+                    ? DateFormat('dd/MM/yyyy').format(DateTime.tryParse(session['sessionDate'].toString()) ?? DateTime.now())
                     : '',
                 style: const TextStyle(color: AppColors.textSecondary, fontSize: 12),
               ),
@@ -381,7 +381,7 @@ class _SessionCard extends StatelessWidget {
               const Icon(Icons.access_time, size: 16, color: AppColors.textSecondary),
               const SizedBox(width: 6),
               Text(
-                '${session['start_time'] ?? '--:--'} — ${session['end_time'] ?? '--:--'}',
+                '${session['startTime'] ?? '--:--'} — ${session['endTime'] ?? '--:--'}',
                 style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
               ),
             ]),
@@ -430,7 +430,7 @@ class _SessionCard extends StatelessWidget {
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton.icon(
-                  onPressed: () => context.go('/education/session/${session['id']}'),
+                  onPressed: () => context.push('/education/session/${session['id']}'),
                   icon: const Icon(Icons.play_circle_outline, size: 18),
                   label: const Text('Démarrer la séance'),
                 ),
@@ -442,7 +442,7 @@ class _SessionCard extends StatelessWidget {
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton.icon(
-                  onPressed: () => context.go(
+                  onPressed: () => context.push(
                     '/education/rate/${session['id']}',
                     extra: session,
                   ),
@@ -488,7 +488,7 @@ class _SessionCard extends StatelessWidget {
               SizedBox(
                 width: double.infinity,
                 child: OutlinedButton.icon(
-                  onPressed: () => context.go(
+                  onPressed: () => context.push(
                     '/education/notebook/${session['contractId']}',
                     extra: {'studentName': isTeacher
                         ? (session['clientName'] ?? 'Élève')
@@ -521,7 +521,7 @@ class _SessionCard extends StatelessWidget {
                         ? session['client_id']
                         : session['provider_id'];
                     if (contactId != null) {
-                      context.go('/messages/chat/$contactId');
+                      context.push('/messages/chat/$contactId');
                     }
                   },
                   icon: const Icon(Icons.chat_bubble_outline, size: 16),
@@ -877,8 +877,8 @@ class _CancelSessionButtonState extends ConsumerState<_CancelSessionButton> {
   bool _loading = false;
 
   String _getPenaltyWarning() {
-    final dateStr = widget.session['session_date'] as String?;
-    final timeStr = widget.session['start_time'] as String?;
+    final dateStr = widget.session['sessionDate'] as String?;
+    final timeStr = widget.session['startTime'] as String?;
     if (dateStr == null) return 'Annulation gratuite si > 24h de préavis.';
     try {
       final dt = DateTime.parse('${dateStr}T${timeStr ?? '08:00'}');
@@ -1003,7 +1003,7 @@ class _NotebookPickerSheet extends StatelessWidget {
           trailing: const Icon(Icons.arrow_forward_ios, size: 14, color: Colors.grey),
           onTap: () {
             Navigator.pop(context);
-            context.go('/education/notebook/${s['contractId']}',
+            context.push('/education/notebook/${s['contractId']}',
                 extra: {'studentName': s['providerName'] ?? 'Enseignant'});
           },
         )),
@@ -1049,5 +1049,5 @@ class _ErrorView extends StatelessWidget {
       const SizedBox(height: 16),
       ElevatedButton(onPressed: onRetry, child: const Text('Réessayer')),
     ]));
-  }
+    }
 }

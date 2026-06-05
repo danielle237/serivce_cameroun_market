@@ -62,7 +62,7 @@ class ResellerDashboardScreen extends ConsumerWidget {
 
               // CTA boutique
               ElevatedButton.icon(
-                onPressed: () => context.go('/marketplace'),
+                onPressed: () => context.push('/marketplace'),
                 icon: const Icon(Icons.storefront),
                 label: const Text('Voir la boutique & commander'),
                 style: ElevatedButton.styleFrom(

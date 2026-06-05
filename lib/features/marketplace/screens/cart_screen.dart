@@ -28,7 +28,7 @@ class CartScreen extends ConsumerWidget {
         ],
       ),
       body: cart.isEmpty
-          ? _EmptyCart(onShop: () => context.go('/marketplace'))
+          ? _EmptyCart(onShop: () => context.push('/marketplace'))
           : Column(
               children: [
                 Expanded(

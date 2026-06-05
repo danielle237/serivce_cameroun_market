@@ -196,7 +196,7 @@ class _SessionActiveScreenState extends ConsumerState<SessionActiveScreen> {
 
       _showSnack('Séance validée avec succès ✅', Colors.green);
       await Future.delayed(const Duration(seconds: 1));
-      if (mounted) context.go('/education');
+      if (mounted) context.push('/education');
     } catch (e) {
       final msg = _extractError(e);
       _showSnack(msg, Colors.red);
@@ -272,7 +272,7 @@ class _SessionActiveScreenState extends ConsumerState<SessionActiveScreen> {
                     ? s['clientId']
                     : s['providerId'];
                 if (contactId != null) {
-                  context.go('/messages/chat/$contactId');
+                  context.push('/messages/chat/$contactId');
                 }
               },
             ),
@@ -825,7 +825,7 @@ class _SessionActiveScreenState extends ConsumerState<SessionActiveScreen> {
             SizedBox(
               width: double.infinity,
               child: OutlinedButton.icon(
-                onPressed: () => context.go('/education'),
+                onPressed: () => context.push('/education'),
                 icon: const Icon(Icons.arrow_back),
                 label: const Text('Retour aux séances'),
               ),
@@ -856,7 +856,7 @@ class _SessionActiveScreenState extends ConsumerState<SessionActiveScreen> {
             SizedBox(
               width: double.infinity,
               child: OutlinedButton.icon(
-                onPressed: () => context.go('/education'),
+                onPressed: () => context.push('/education'),
                 icon: const Icon(Icons.arrow_back),
                 label: const Text('Retour aux séances'),
               ),

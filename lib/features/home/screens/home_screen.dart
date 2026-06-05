@@ -6,6 +6,25 @@ import '../../../core/providers/auth_provider.dart';
 import '../../../core/providers/badges_provider.dart';
 import '../../../core/theme/app_theme.dart';
 
+// ── Providers annonces pour la page d'accueil ─────────────────────────────────
+final _homeEducationRequestsProvider = FutureProvider.autoDispose<List>((ref) async {
+  try {
+    final api = ref.read(apiClientProvider);
+    final res = await api.get('/education/requests', forceRefresh: true);
+    final data = res.data;
+    return data is List ? data.take(5).toList() : [];
+  } catch (_) { return []; }
+});
+
+final _homeArtisanRequestsProvider = FutureProvider.autoDispose<List>((ref) async {
+  try {
+    final api = ref.read(apiClientProvider);
+    final res = await api.get('/artisans/requests', forceRefresh: true);
+    final data = res.data;
+    return data is List ? data.take(5).toList() : [];
+  } catch (_) { return []; }
+});
+
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
 
@@ -21,24 +40,39 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     setState(() => _switching = true);
     try {
       final api = ref.read(apiClientProvider);
-      final res = await api.patch('/users/mode', data: {'mode': next});
 
-      // L'API peut renvoyer soit le user complet, soit {user: {...}}, soit {data: {...}}
-      final raw = res.data;
-      Map<String, dynamic> updatedUser;
-      if (raw is Map && raw.containsKey('user')) {
-        updatedUser = Map<String, dynamic>.from(raw['user']);
-      } else if (raw is Map && raw.containsKey('data')) {
-        updatedUser = Map<String, dynamic>.from(raw['data']);
-      } else if (raw is Map && raw.containsKey('activeMode')) {
-        updatedUser = Map<String, dynamic>.from(raw);
+      // 1. Changer le mode côté serveur
+      await api.patch('/users/mode', data: {'mode': next});
+
+      // 2. Rafraîchir le JWT pour que les nouvelles claims (activeMode) soient incluses
+      //    Sans ça, le mode change en base mais le token garde l'ancien rôle
+      final storage = ref.read(authStateProvider.notifier);
+      final refreshToken = ref.read(authStateProvider).value?.refreshToken;
+      if (refreshToken != null) {
+        try {
+          final refreshRes = await api.post('/auth/refresh',
+              data: {'refreshToken': refreshToken});
+          final newAccess  = refreshRes.data['accessToken']  as String;
+          final newRefresh = refreshRes.data['refreshToken'] as String;
+          // Le nouveau JWT contient le user mis à jour avec activeMode
+          final userRaw = refreshRes.data['user'];
+          Map<String, dynamic> updatedUser;
+          if (userRaw is Map) {
+            updatedUser = Map<String, dynamic>.from(userRaw);
+          } else {
+            final cur = ref.read(authStateProvider).value?.user ?? {};
+            updatedUser = {...cur, 'activeMode': next};
+          }
+          await storage.setAuth(newAccess, newRefresh, updatedUser);
+        } catch (_) {
+          // Fallback : mettre à jour juste activeMode localement
+          final cur = ref.read(authStateProvider).value?.user ?? {};
+          await storage.updateUser({...cur, 'activeMode': next});
+        }
       } else {
-        // Fallback : on met à jour juste le mode localement
-        final currentUser = ref.read(authStateProvider).value?.user ?? {};
-        updatedUser = {...currentUser, 'activeMode': next};
+        final cur = ref.read(authStateProvider).value?.user ?? {};
+        await storage.updateUser({...cur, 'activeMode': next});
       }
-
-      await ref.read(authStateProvider.notifier).updateUser(updatedUser);
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -52,7 +86,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       }
     } catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('$e'), backgroundColor: Colors.red),
+        SnackBar(content: Text('Erreur switch mode: $e'), backgroundColor: Colors.red),
       );
     }
     if (mounted) setState(() => _switching = false);
@@ -106,6 +140,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   }),
 
                   const SizedBox(height: 24),
+
+                  // ── Annonces disponibles (prestataire uniquement) ────────
+                  if (isProvider) ...[
+                    _AnnouncementsSection(user: user),
+                    const SizedBox(height: 24),
+                  ],
 
                   // ── Activité récente ────────────────────────────────────
                   Row(
@@ -578,6 +618,166 @@ class _ActivityCard extends StatelessWidget {
               style: TextStyle(fontSize: 10, color: color, fontWeight: FontWeight.w600)),
         ),
       ]),
+    );
+  }
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// SECTION ANNONCES — visible seulement en mode prestataire
+// Affiche éducation + artisans, clic direct pour proposer un contrat
+// ═════════════════════════════════════════════════════════════════════════════
+class _AnnouncementsSection extends ConsumerWidget {
+  final Map<String, dynamic>? user;
+  const _AnnouncementsSection({this.user});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final professions = (user?['professions'] as List?)?.cast<String>() ?? [];
+    final isTeacher = professions.any((p) {
+      final pl = p.toLowerCase();
+      return pl.contains('enseig') || pl.contains('professeur') ||
+             pl.contains('cours') || pl.contains('education') || pl.contains('tuteur');
+    });
+    final isArtisan = professions.any((p) {
+      final pl = p.toLowerCase();
+      return pl.contains('artisan') || pl.contains('électric') || pl.contains('plomb') ||
+             pl.contains('maçon') || pl.contains('menuisier') || pl.contains('peintre') ||
+             pl.contains('carreleur') || pl.contains('soudeur');
+    });
+
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      const Text('📋 Annonces disponibles',
+          style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
+      const SizedBox(height: 10),
+
+      // Annonces éducation
+      if (isTeacher || professions.isEmpty)
+        _AnnouncementsList(
+          icon: '📚',
+          label: 'Cours particuliers',
+          color: const Color(0xFF1976D2),
+          provider: _homeEducationRequestsProvider,
+          onTap: (item) => context.push('/education/requests'),
+        ),
+
+      if ((isTeacher || professions.isEmpty) && (isArtisan || professions.isEmpty))
+        const SizedBox(height: 10),
+
+      // Annonces artisans
+      if (isArtisan || professions.isEmpty)
+        _AnnouncementsList(
+          icon: '🔧',
+          label: 'Travaux & services',
+          color: const Color(0xFFF59E0B),
+          provider: _homeArtisanRequestsProvider,
+          onTap: (item) {
+            final id = item['id'] as String?;
+            if (id != null) context.push('/artisans/quotes/$id?title=${Uri.encodeComponent(item['title'] ?? 'Demande')}');
+          },
+        ),
+
+      // Si aucune catégorie détectée, afficher les deux
+      if (!isTeacher && !isArtisan && professions.isNotEmpty)
+        Text('Completez votre profil pour voir les annonces correspondantes',
+            style: TextStyle(fontSize: 12, color: Colors.grey.shade500)),
+    ]);
+  }
+}
+
+class _AnnouncementsList extends ConsumerWidget {
+  final String icon, label;
+  final Color color;
+  final ProviderBase<AsyncValue<List>> provider;
+  final void Function(Map<String, dynamic>) onTap;
+
+  const _AnnouncementsList({
+    required this.icon, required this.label, required this.color,
+    required this.provider, required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final async = ref.watch(provider);
+    return async.when(
+      loading: () => const SizedBox(height: 40,
+          child: Center(child: CircularProgressIndicator(strokeWidth: 2))),
+      error: (_, __) => const SizedBox.shrink(),
+      data: (items) {
+        if (items.isEmpty) return const SizedBox.shrink();
+        return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [
+            Text('$icon $label',
+                style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: color)),
+            const SizedBox(width: 6),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              decoration: BoxDecoration(color: color.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(10)),
+              child: Text('${items.length}',
+                  style: TextStyle(fontSize: 11, color: color, fontWeight: FontWeight.bold)),
+            ),
+          ]),
+          const SizedBox(height: 8),
+          ...items.map((item) => _AnnouncementTile(
+            item: Map<String, dynamic>.from(item),
+            color: color,
+            onTap: () => onTap(Map<String, dynamic>.from(item)),
+          )),
+        ]);
+      },
+    );
+  }
+}
+
+class _AnnouncementTile extends StatelessWidget {
+  final Map<String, dynamic> item;
+  final Color color;
+  final VoidCallback onTap;
+  const _AnnouncementTile({required this.item, required this.color, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final title = item['title'] ?? item['subject'] ?? 'Annonce';
+    final location = item['locationAddress'] ?? item['location'] ?? '';
+    final budget = item['budgetPerSession'] ?? item['budgetMin'];
+
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 8),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: color.withOpacity(0.2)),
+          boxShadow: [BoxShadow(
+            color: Colors.black.withOpacity(0.04), blurRadius: 4, offset: const Offset(0, 2))],
+        ),
+        child: Row(children: [
+          Container(
+            width: 40, height: 40,
+            decoration: BoxDecoration(color: color.withOpacity(0.1), shape: BoxShape.circle),
+            child: Icon(Icons.assignment_outlined, color: color, size: 20),
+          ),
+          const SizedBox(width: 10),
+          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(title.toString(),
+                style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                maxLines: 1, overflow: TextOverflow.ellipsis),
+            if (location.toString().isNotEmpty)
+              Text(location.toString(),
+                  style: TextStyle(fontSize: 11, color: Colors.grey.shade500),
+                  maxLines: 1, overflow: TextOverflow.ellipsis),
+          ])),
+          if (budget != null) ...[
+            const SizedBox(width: 8),
+            Text('${budget} FCFA',
+                style: TextStyle(fontSize: 12, color: color, fontWeight: FontWeight.bold)),
+          ],
+          const SizedBox(width: 4),
+          Icon(Icons.chevron_right, color: color, size: 18),
+        ]),
+      ),
     );
   }
 }

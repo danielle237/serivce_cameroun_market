@@ -59,6 +59,11 @@ final appRouterProvider = Provider<GoRouter>((ref) {
   return GoRouter(
     initialLocation: '/',
     redirect: (context, state) {
+      // Auth encore en cours de chargement → rester sur le splash '/'
+      if (authState.isLoading) {
+        return state.matchedLocation == '/' ? null : '/';
+      }
+
       final isLoggedIn = authState.value?.accessToken != null;
       final isAuthRoute = state.matchedLocation.startsWith('/auth');
       final isRoot = state.matchedLocation == '/';
@@ -69,6 +74,14 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       return null;
     },
     routes: [
+      // Splash — affiché pendant le chargement du token (évite le flash login)
+      GoRoute(
+        path: '/',
+        builder: (c, s) => const Scaffold(
+          backgroundColor: Color(0xFF1A237E),
+          body: Center(child: CircularProgressIndicator(color: Colors.white)),
+        ),
+      ),
       // Auth routes
       GoRoute(path: '/auth/welcome', builder: (c, s) => const WelcomeScreen()),
       GoRoute(path: '/auth/role-choice', builder: (c, s) => const RoleChoiceScreen()),
@@ -98,21 +111,23 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           GoRoute(path: '/home', builder: (c, s) => const HomeScreen()),
           GoRoute(path: '/wallet', builder: (c, s) => const WalletScreen()),
           GoRoute(path: '/messages', builder: (c, s) => const ConversationsScreen()),
-          GoRoute(
-            path: '/messages/chat/:userId',
-            builder: (c, s) {
-              final extra = s.extra as Map<String, dynamic>?;
-              return ChatScreen(
-                contactId: s.pathParameters['userId']!,
-                applicationId: extra?['applicationId'] as String?,
-                applicationData: extra?['applicationData'] as Map<String, dynamic>?,
-                quoteData: extra?['quoteData'] as Map<String, dynamic>?,
-                marketplaceData: extra?['marketplaceData'] as Map<String, dynamic>?,
-              );
-            },
-          ),
           GoRoute(path: '/profile', builder: (c, s) => const ProfileScreen()),
         ],
+      ),
+
+      // Chat — hors ShellRoute pour être accessible depuis tous les modules
+      GoRoute(
+        path: '/messages/chat/:userId',
+        builder: (c, s) {
+          final extra = s.extra as Map<String, dynamic>?;
+          return ChatScreen(
+            contactId: s.pathParameters['userId']!,
+            applicationId: extra?['applicationId'] as String?,
+            applicationData: extra?['applicationData'] as Map<String, dynamic>?,
+            quoteData: extra?['quoteData'] as Map<String, dynamic>?,
+            marketplaceData: extra?['marketplaceData'] as Map<String, dynamic>?,
+          );
+        },
       ),
 
       // ── Marketplace — hors shell pour avoir le bouton retour propre ──────────

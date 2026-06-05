@@ -77,7 +77,7 @@ class ConversationsScreen extends ConsumerWidget {
                         ],
                       ],
                     ),
-                    onTap: () => context.go('/messages/chat/${c['contact_id']}'),
+                    onTap: () => context.push('/messages/chat/${c['contact_id']}'),
                   );
                 },
               ),

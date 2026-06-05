@@ -7,7 +7,7 @@ import '../../../core/theme/app_theme.dart';
 
 final artisanRequestsProvider = FutureProvider.autoDispose<List>((ref) async {
   final api = ref.read(apiClientProvider);
-  final res = await api.get('/artisans/requests', params: {'mine': 'true'});
+  final res = await api.get('/artisans/requests', params: {'mine': 'true'}, forceRefresh: true);
   return List.from(res.data);
 });
 
@@ -26,7 +26,7 @@ class ArtisansHomeScreen extends ConsumerWidget {
           IconButton(
             icon: const Icon(Icons.search),
             tooltip: 'Trouver un artisan',
-            onPressed: () => context.go('/artisans/search'),
+            onPressed: () => context.push('/artisans/search'),
           ),
           Consumer(builder: (_, ref, __) {
             final myId = ref.read(authStateProvider).value?.user?['id'];
@@ -34,7 +34,7 @@ class ArtisansHomeScreen extends ConsumerWidget {
             return IconButton(
               icon: const Icon(Icons.photo_library_outlined),
               tooltip: 'Mon portfolio',
-              onPressed: () => context.go('/artisans/portfolio/$myId'),
+              onPressed: () => context.push('/artisans/portfolio/$myId'),
             );
           }),
         ],
@@ -59,7 +59,7 @@ class ArtisansHomeScreen extends ConsumerWidget {
           }),
           FloatingActionButton.extended(
             heroTag: 'new',
-            onPressed: () => context.go('/artisans/request'),
+            onPressed: () => context.push('/artisans/request'),
             icon: const Icon(Icons.add),
             label: const Text('Nouvelle demande'),
           ),
@@ -83,7 +83,7 @@ class ArtisansHomeScreen extends ConsumerWidget {
                 const Text('Publiez une demande pour trouver un artisan', style: TextStyle(color: AppColors.textSecondary, fontSize: 13)),
                 const SizedBox(height: 24),
                 ElevatedButton.icon(
-                  onPressed: () => context.go('/artisans/request'),
+                  onPressed: () => context.push('/artisans/request'),
                   icon: const Icon(Icons.add),
                   label: const Text('Publier une demande'),
                 ),
@@ -179,6 +179,14 @@ class _RequestCard extends ConsumerStatefulWidget {
 
 class _RequestCardState extends ConsumerState<_RequestCard> {
   bool _actLoading = false;
+  // État local — mis à jour immédiatement après cancel/delete
+  late String _localStatus;
+
+  @override
+  void initState() {
+    super.initState();
+    _localStatus = widget.request['status'] as String? ?? 'pending';
+  }
 
   static const _statusColors = {
     'pending': AppColors.warning,
@@ -213,11 +221,14 @@ class _RequestCardState extends ConsumerState<_RequestCard> {
     setState(() => _actLoading = true);
     try {
       await ref.read(apiClientProvider).patch('/artisans/requests/${widget.request['id']}/cancel');
-      if (mounted) widget.onRefresh();
+      if (mounted) {
+        setState(() => _localStatus = 'cancelled'); // mise à jour immédiate
+        widget.onRefresh();
+      }
     } catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erreur: $e'), backgroundColor: Colors.red));
     }
-    setState(() => _actLoading = false);
+    if (mounted) setState(() => _actLoading = false);
   }
 
   Future<void> _delete() async {
@@ -240,11 +251,14 @@ class _RequestCardState extends ConsumerState<_RequestCard> {
     setState(() => _actLoading = true);
     try {
       await ref.read(apiClientProvider).delete('/artisans/requests/${widget.request['id']}');
-      if (mounted) widget.onRefresh();
+      if (mounted) {
+        setState(() => _localStatus = 'deleted'); // masquer la card immédiatement
+        widget.onRefresh();
+      }
     } catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erreur: $e'), backgroundColor: Colors.red));
     }
-    setState(() => _actLoading = false);
+    if (mounted) setState(() => _actLoading = false);
   }
 
   void _edit() {
@@ -261,7 +275,10 @@ class _RequestCardState extends ConsumerState<_RequestCard> {
 
   @override
   Widget build(BuildContext context) {
-    final status = widget.request['status'] as String? ?? 'pending';
+    // Masquer la card si supprimée
+    if (_localStatus == 'deleted') return const SizedBox.shrink();
+
+    final status = _localStatus; // état local → mis à jour immédiatement
     final color = _statusColors[status] ?? AppColors.textSecondary;
     final canEdit = status == 'pending';
     final canCancel = ['pending', 'quoted'].contains(status);
@@ -318,7 +335,7 @@ class _RequestCardState extends ConsumerState<_RequestCard> {
               child: SizedBox(
                 width: double.infinity,
                 child: OutlinedButton.icon(
-                  onPressed: () => context.go(
+                  onPressed: () => context.push(
                     '/artisans/rate-client/${widget.request['id']}',
                     extra: {'clientName': widget.request['clientName'] ?? 'Client'},
                   ),
@@ -339,7 +356,7 @@ class _RequestCardState extends ConsumerState<_RequestCard> {
             SizedBox(
               width: double.infinity,
               child: ElevatedButton.icon(
-                onPressed: () => context.go(
+                onPressed: () => context.push(
                   '/artisans/rate/${widget.request['id']}',
                   extra: {'artisanName': widget.request['selectedProviderName'] ?? 'Artisan'},
                 ),
@@ -356,7 +373,7 @@ class _RequestCardState extends ConsumerState<_RequestCard> {
             SizedBox(
               width: double.infinity,
               child: ElevatedButton.icon(
-                onPressed: () => context.go(
+                onPressed: () => context.push(
                   '/artisans/quotes/${widget.request['id']}?title=${Uri.encodeComponent(widget.request['title'] ?? 'Ma demande')}',
                 ),
                 icon: const Icon(Icons.request_quote_outlined, size: 16),
@@ -376,7 +393,7 @@ class _RequestCardState extends ConsumerState<_RequestCard> {
           if (widget.request['selectedProviderId'] != null) ...[
             const SizedBox(height: 6),
             TextButton.icon(
-              onPressed: () => context.go(
+              onPressed: () => context.push(
                   '/artisans/portfolio/${widget.request['selectedProviderId']}'),
               icon: const Icon(Icons.photo_library_outlined, size: 16),
               label: const Text('Voir le portfolio de l\'artisan'),

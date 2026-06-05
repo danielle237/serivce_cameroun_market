@@ -298,7 +298,7 @@ class _ArtisanCard extends StatelessWidget {
       elevation: 2,
       child: InkWell(
         borderRadius: BorderRadius.circular(14),
-        onTap: id != null ? () => context.go('/artisans/portfolio/$id') : null,
+        onTap: id != null ? () => context.push('/artisans/portfolio/$id') : null,
         child: Padding(
           padding: const EdgeInsets.all(14),
           child: Row(children: [

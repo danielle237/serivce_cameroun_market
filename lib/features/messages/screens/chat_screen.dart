@@ -119,8 +119,12 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     final token = await _storage.read(key: 'access_token');
     _socket = IO.io('$_wsBaseUrl/chat',
       IO.OptionBuilder()
-        .setTransports(['websocket'])
+        // polling d'abord (fiable sur 3G/Android), puis upgrade vers websocket
+        .setTransports(['polling', 'websocket'])
         .setAuth({'token': token})
+        .enableAutoConnect()
+        .setReconnectionAttempts(5)
+        .setReconnectionDelay(2000)
         .build(),
     );
 

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -696,7 +697,7 @@ class _MyAnnouncementsState extends ConsumerState<_MyAnnouncements> {
     setState(() { _loading = true; _error = null; });
     try {
       final api = ref.read(apiClientProvider);
-      final res = await api.get('/education/requests/mine');
+      final res = await api.get('/education/requests/mine', forceRefresh: true);
       final data = res.data;
       setState(() {
         _items = data is List ? data : (data['data'] ?? data['items'] ?? []);
@@ -757,6 +758,14 @@ class _AnnouncementCard extends ConsumerStatefulWidget {
 class _AnnouncementCardState extends ConsumerState<_AnnouncementCard> {
   bool _expanded = false;
   bool _actLoading = false;
+  // État local du statut — mis à jour immédiatement après toggle (sans attendre le reload)
+  late String _localStatus;
+
+  @override
+  void initState() {
+    super.initState();
+    _localStatus = widget.data['status'] as String? ?? 'open';
+  }
 
   Widget _buildChildrenTitle(Map<String, dynamic> r) {
     final children = r['children'] as List?;
@@ -797,14 +806,25 @@ class _AnnouncementCardState extends ConsumerState<_AnnouncementCard> {
     try {
       final api = ref.read(apiClientProvider);
       final res = await api.patch('/education/requests/${widget.data['id']}/toggle');
+      final newStatus = res.data['status'] as String? ?? (_localStatus == 'open' ? 'paused' : 'open');
       if (mounted) {
+        // Mise à jour immédiate du bouton sans attendre le reload
+        setState(() => _localStatus = newStatus);
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
           content: Text(res.data['message'] ?? 'Statut mis à jour'),
-          backgroundColor: Colors.green));
+          backgroundColor: Colors.green,
+          behavior: SnackBarBehavior.floating,
+        ));
         widget.onRefresh();
       }
-    } catch (_) {}
-    setState(() => _actLoading = false);
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('Erreur: $e'),
+        backgroundColor: Colors.red,
+        behavior: SnackBarBehavior.floating,
+      ));
+    }
+    if (mounted) setState(() => _actLoading = false);
   }
 
   Future<void> _cancel() async {
@@ -819,9 +839,17 @@ class _AnnouncementCardState extends ConsumerState<_AnnouncementCard> {
       ],
     ));
     if (ok != true) return;
-    final api = ref.read(apiClientProvider);
-    await api.patch('/education/requests/${widget.data['id']}/cancel');
-    widget.onRefresh();
+    try {
+      final api = ref.read(apiClientProvider);
+      await api.patch('/education/requests/${widget.data['id']}/cancel');
+      if (mounted) widget.onRefresh();
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('Erreur annulation: $e'),
+        backgroundColor: Colors.red,
+        behavior: SnackBarBehavior.floating,
+      ));
+    }
   }
 
   void _edit() => showModalBottomSheet(
@@ -831,25 +859,36 @@ class _AnnouncementCardState extends ConsumerState<_AnnouncementCard> {
     builder: (_) => _EditSheet(data: widget.data, onSaved: widget.onRefresh),
   );
 
-  Future<void> _acceptContract(String contractId) async {
+  Future<void> _acceptContract(String applicationId) async {
     setState(() => _actLoading = true);
     try {
       final api = ref.read(apiClientProvider);
-      await api.patch('/contracts/$contractId/validate');
+      // Accepte la candidature → crée le contrat + ferme l'annonce
+      await api.patch(
+        '/education/requests/${widget.data['id']}/applications/$applicationId/accept',
+      );
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Contrat accepté ✅ Fonds mis en séquestre'),
-          backgroundColor: Colors.green));
+          content: Text('✅ Contrat créé — l\'enseignant a été notifié'),
+          backgroundColor: Colors.green,
+          behavior: SnackBarBehavior.floating,
+        ));
         widget.onRefresh();
       }
-    } catch (_) {}
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('Erreur: $e'), backgroundColor: Colors.red,
+        behavior: SnackBarBehavior.floating,
+      ));
+    }
     setState(() => _actLoading = false);
   }
 
   @override
   Widget build(BuildContext context) {
     final r = widget.data;
-    final status = r['status'] as String? ?? 'open';
+    // Utilise _localStatus pour refléter les changements immédiats après toggle
+    final status = _localStatus;
     final apps = r['applications'] as List? ?? [];
     final pendingApps = apps.where((a) => a['status'] == 'pending').toList();
     final canEdit = status == 'open' || status == 'paused';
@@ -964,12 +1003,13 @@ class _AnnouncementCardState extends ConsumerState<_AnnouncementCard> {
                     app: Map<String, dynamic>.from(app),
                     requestStatus: status,
                     requestId: widget.data['id'] as String,
-                    onAccept: () => _acceptContract(app['contractId'] ?? app['id']),
+                    onAccept: () => _acceptContract(app['id'] as String),
                     onReject: () async {
                       final api = ref.read(apiClientProvider);
                       await api.patch('/education/requests/${widget.data['id']}/applications/${app['id']}/reject');
                       widget.onRefresh();
                     },
+                    onRefresh: widget.onRefresh,
                   )).toList(),
                 ),
               ),
@@ -1008,19 +1048,102 @@ class _AnnouncementCardState extends ConsumerState<_AnnouncementCard> {
 }
 
 // ─── Tuile proposition de contrat (vue parent) ────────────────────────────────
-class _ContractProposalTile extends StatelessWidget {
+class _ContractProposalTile extends ConsumerStatefulWidget {
   final Map<String, dynamic> app;
   final String requestStatus;
   final String requestId;
   final VoidCallback onAccept;
   final VoidCallback onReject;
+  final VoidCallback onRefresh;
   const _ContractProposalTile({required this.app, required this.requestStatus,
-    required this.requestId, required this.onAccept, required this.onReject});
+    required this.requestId, required this.onAccept, required this.onReject,
+    required this.onRefresh});
+
+  @override
+  ConsumerState<_ContractProposalTile> createState() => _ContractProposalTileState();
+}
+
+class _ContractProposalTileState extends ConsumerState<_ContractProposalTile> {
+  bool _proposingRate = false;
+
+  Future<void> _proposeFinalRate() async {
+    final ctrl = TextEditingController(
+        text: widget.app['proposedRate']?.toString() ?? '');
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('💰 Proposer un devis final'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Proposition initiale : ${widget.app['proposedRate']} FCFA/séance',
+              style: const TextStyle(fontSize: 12, color: Colors.grey),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: ctrl,
+              keyboardType: TextInputType.number,
+              autofocus: true,
+              decoration: InputDecoration(
+                labelText: 'Votre tarif final (FCFA/séance)',
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                suffixText: 'FCFA',
+              ),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              "L'enseignant recevra une notification et devra valider ce tarif pour créer le contrat.",
+              style: TextStyle(fontSize: 11, color: Colors.grey),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false),
+              child: const Text('Annuler')),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF1976D2), foregroundColor: Colors.white),
+            child: const Text('Envoyer'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    final rate = int.tryParse(ctrl.text.trim());
+    if (rate == null || rate <= 0) return;
+
+    setState(() => _proposingRate = true);
+    try {
+      final api = ref.read(apiClientProvider);
+      await api.patch(
+        '/education/requests/${widget.requestId}/applications/${widget.app['id']}/propose-rate',
+        data: {'finalRate': rate},
+      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('✅ Devis final envoyé — en attente de validation'),
+          backgroundColor: Colors.green,
+          behavior: SnackBarBehavior.floating,
+        ));
+        widget.onRefresh();
+      }
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Erreur: $e'), backgroundColor: Colors.red));
+    }
+    if (mounted) setState(() => _proposingRate = false);
+  }
 
   @override
   Widget build(BuildContext context) {
+    final app = widget.app;
     final teacher = app['teacher'] as Map<String, dynamic>?;
     final appStatus = app['status'] as String? ?? 'pending';
+    final finalRateStatus = app['finalRateStatus'] as String? ?? 'none';
+    final finalRate = app['finalRate'];
     final colors = {'pending': Colors.orange, 'accepted': Colors.green, 'rejected': Colors.grey};
     final labels = {'pending': 'En attente', 'accepted': '✓ Accepté', 'rejected': 'Rejeté'};
 
@@ -1061,7 +1184,7 @@ class _ContractProposalTile extends StatelessWidget {
                 child: InkWell(
                   onTap: () {
                     final id = teacher?['id'] as String?;
-                    if (id != null) context.go('/education/portfolio/$id');
+                    if (id != null) context.push('/education/portfolio/$id');
                   },
                   child: Text(
                     teacher?['name'] ?? 'Enseignant',
@@ -1126,72 +1249,107 @@ class _ContractProposalTile extends StatelessWidget {
           const SizedBox(height: 6),
           Text(app['message'], style: const TextStyle(fontSize: 13, color: Colors.black87)),
         ],
-        if (appStatus == 'pending' && requestStatus == 'open') ...[
-          const SizedBox(height: 12),
+        // ── Statut devis final ──────────────────────────────────────────
+        if (finalRateStatus == 'proposed' && finalRate != null) ...[
+          const SizedBox(height: 10),
           Container(
             padding: const EdgeInsets.all(10),
             decoration: BoxDecoration(
-              color: Colors.amber.shade50,
+              color: Colors.blue.shade50,
               borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: Colors.amber.shade200),
+              border: Border.all(color: Colors.blue.shade200),
             ),
-            child: const Row(children: [
-              Icon(Icons.account_balance_wallet_outlined, size: 16, color: Colors.amber),
-              SizedBox(width: 6),
+            child: Row(children: [
+              const Icon(Icons.schedule, size: 16, color: Colors.blue),
+              const SizedBox(width: 6),
               Expanded(child: Text(
-                'En acceptant, le montant convenu sera placé en séquestre jusqu\'à la fin de la séance.',
-                style: TextStyle(fontSize: 12, color: Colors.amber),
+                '⏳ Devis final de $finalRate FCFA/séance envoyé — en attente de validation par l\'enseignant',
+                style: const TextStyle(fontSize: 12, color: Colors.blue, fontWeight: FontWeight.w600),
               )),
             ]),
           ),
+        ] else if (finalRateStatus == 'confirmed') ...[
           const SizedBox(height: 10),
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: Colors.green.shade50,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: Colors.green.shade300),
+            ),
+            child: Row(children: [
+              const Icon(Icons.check_circle, size: 16, color: Colors.green),
+              const SizedBox(width: 6),
+              Expanded(child: Text(
+                '✅ Devis de $finalRate FCFA/séance validé — contrat créé !',
+                style: const TextStyle(fontSize: 12, color: Colors.green, fontWeight: FontWeight.w600),
+              )),
+            ]),
+          ),
+        ],
+
+        if (appStatus == 'pending' && widget.requestStatus == 'open') ...[
+          const SizedBox(height: 12),
+          // Bouton Refuser
           Row(children: [
             Expanded(child: OutlinedButton.icon(
-              onPressed: onReject,
+              onPressed: widget.onReject,
               icon: const Icon(Icons.close, size: 16),
               label: const Text('Refuser'),
               style: OutlinedButton.styleFrom(
                   foregroundColor: Colors.red, side: const BorderSide(color: Colors.red)),
             )),
             const SizedBox(width: 10),
-            Expanded(child: ElevatedButton.icon(
-              onPressed: onAccept,
-              icon: const Icon(Icons.check, size: 16),
-              label: const Text('Accepter le contrat'),
-              style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.green, foregroundColor: Colors.white),
-            )),
+            // Bouton Proposer devis final
+            if (finalRateStatus == 'none' || finalRateStatus == 'rejected')
+              Expanded(child: ElevatedButton.icon(
+                onPressed: _proposingRate ? null : _proposeFinalRate,
+                icon: _proposingRate
+                    ? const SizedBox(width: 14, height: 14,
+                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                    : const Icon(Icons.price_change_outlined, size: 16),
+                label: const Text('Proposer devis'),
+                style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF1976D2), foregroundColor: Colors.white),
+              ))
+            else if (finalRateStatus == 'proposed')
+              Expanded(child: OutlinedButton.icon(
+                onPressed: _proposingRate ? null : _proposeFinalRate,
+                icon: const Icon(Icons.edit, size: 16),
+                label: const Text('Modifier devis'),
+                style: OutlinedButton.styleFrom(
+                    foregroundColor: const Color(0xFF1976D2),
+                    side: const BorderSide(color: Color(0xFF1976D2))),
+              )),
           ]),
         ],
+
         // Bouton message — toujours visible sauf rejeté
         if (appStatus != 'rejected') ...[
-          const SizedBox(height: 10),
+          const SizedBox(height: 8),
           const Divider(height: 1),
-          const SizedBox(height: 4),
-          Builder(builder: (ctx) => TextButton.icon(
+          TextButton.icon(
             onPressed: () {
               final teacherId = app['teacher']?['id'] as String?;
               if (teacherId != null) {
-                ctx.go(
+                context.push(
                   '/messages/chat/$teacherId',
                   extra: {
                     'applicationId': app['id'] as String?,
                     'applicationData': {
                       ...Map<String, dynamic>.from(app),
-                      'requestId': requestId,
+                      'requestId': widget.requestId,
                     },
                   },
                 );
               }
             },
             icon: const Icon(Icons.chat_bubble_outline, size: 16),
-            label: Text(
-              appStatus == 'accepted'
-                  ? 'Messagerie avec l\'enseignant'
-                  : 'Discuter avant d\'accepter',
-            ),
+            label: Text(appStatus == 'accepted'
+                ? 'Messagerie avec l\'enseignant'
+                : 'Discuter du devis'),
             style: TextButton.styleFrom(foregroundColor: const Color(0xFF1976D2)),
-          )),
+          ),
         ],
       ]),
     );
@@ -1409,18 +1567,33 @@ class _OpenAnnouncementsState extends ConsumerState<_OpenAnnouncements> {
   List<dynamic> _items = [];
   bool _loading = true;
   final _searchCtrl = TextEditingController();
+  Timer? _refreshTimer;
 
   @override
-  void initState() { super.initState(); _load(); }
+  void initState() {
+    super.initState();
+    _load();
+    _refreshTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+      if (mounted) _load(silent: true);
+    });
+  }
 
-  Future<void> _load([String? subject]) async {
-    setState(() => _loading = true);
+  @override
+  void dispose() {
+    _refreshTimer?.cancel();
+    _searchCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _load({String? subject, bool silent = false}) async {
+    if (!silent) setState(() => _loading = true);
     try {
       final api = ref.read(apiClientProvider);
       final res = await api.get('/education/requests',
-          params: (subject != null && subject.isNotEmpty) ? {'subject': subject} : null);
-      setState(() { _items = List.from(res.data); _loading = false; });
-    } catch (_) { setState(() => _loading = false); }
+          params: (subject != null && subject.isNotEmpty) ? {'subject': subject} : null,
+          forceRefresh: true);
+      if (mounted) setState(() { _items = List.from(res.data); _loading = false; });
+    } catch (_) { if (mounted) setState(() => _loading = false); }
   }
 
   @override
@@ -1438,7 +1611,7 @@ class _OpenAnnouncementsState extends ConsumerState<_OpenAnnouncements> {
             border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
             contentPadding: const EdgeInsets.symmetric(vertical: 10, horizontal: 14),
           ),
-          onSubmitted: _load,
+          onSubmitted: (_) => _load(),
         ),
       ),
       Expanded(
@@ -1773,22 +1946,120 @@ class _MyProposalsState extends ConsumerState<_MyProposals> {
   List<dynamic> _items = [];
   bool _loading = true;
   String? _error;
+  Timer? _refreshTimer;
 
   @override
-  void initState() { super.initState(); _load(); }
+  void initState() {
+    super.initState();
+    _load();
+    // Mise à jour temps réel — rafraîchit toutes les 30 secondes
+    _refreshTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+      if (mounted) _load(silent: true);
+    });
+  }
 
-  Future<void> _load([_]) async {
-    setState(() { _loading = true; _error = null; });
+  @override
+  void dispose() {
+    _refreshTimer?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _validateFinalRate(Map<String, dynamic> item) async {
+    final requestId = (item['request']?['id'] ?? item['requestId']) as String?;
+    final appId     = item['id'] as String?;
+    if (requestId == null || appId == null) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Valider le devis final ?'),
+        content: Text(
+          'En validant, vous acceptez le tarif de ${item['finalRate']} FCFA/séance.\n'
+          'Un contrat sera créé et l\'annonce sera retirée aux autres enseignants.',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Annuler')),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.green, foregroundColor: Colors.white),
+            child: const Text('Oui, valider'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
     try {
       final api = ref.read(apiClientProvider);
-      final res = await api.get('/education/requests/my-proposals');
+      await api.patch('/education/requests/$requestId/applications/$appId/validate-rate');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('🎉 Contrat créé ! Le parent a été notifié.'),
+          backgroundColor: Colors.green,
+          behavior: SnackBarBehavior.floating,
+        ));
+        _load();
+      }
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Erreur: $e'), backgroundColor: Colors.red));
+    }
+  }
+
+  Future<void> _withdrawProposal(Map<String, dynamic> item) async {
+    final requestId = (item['request']?['id'] ?? item['requestId']) as String?;
+    final appId     = item['id'] as String?;
+    if (requestId == null || appId == null) return;
+
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Retirer la candidature ?'),
+        content: const Text('Votre proposition sera supprimée. Le parent ne pourra plus vous contacter via cette annonce.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Annuler')),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white),
+            child: const Text('Retirer'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+
+    try {
+      final api = ref.read(apiClientProvider);
+      await api.delete('/education/requests/$requestId/applications/$appId/withdraw');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Candidature retirée'),
+          backgroundColor: Colors.orange,
+          behavior: SnackBarBehavior.floating,
+        ));
+        _load();
+      }
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('Erreur: $e'), backgroundColor: Colors.red,
+        behavior: SnackBarBehavior.floating,
+      ));
+    }
+  }
+
+  Future<void> _load({bool silent = false}) async {
+    if (!silent) setState(() { _loading = true; _error = null; });
+    try {
+      final api = ref.read(apiClientProvider);
+      final res = await api.get('/education/requests/my-proposals',
+          forceRefresh: true);
       final data = res.data;
-      setState(() {
+      if (mounted) setState(() {
         _items = data is List ? data : (data['data'] ?? data['items'] ?? []);
         _loading = false;
       });
     } catch (e) {
-      setState(() { _loading = false; _error = e.toString(); });
+      if (mounted) setState(() { _loading = false; _error = e.toString(); });
     }
   }
 
@@ -1800,12 +2071,12 @@ class _MyProposalsState extends ConsumerState<_MyProposals> {
       const SizedBox(height: 12),
       Text(_error!, textAlign: TextAlign.center, style: const TextStyle(color: Colors.red, fontSize: 13)),
       const SizedBox(height: 12),
-      ElevatedButton(onPressed: () => _load(null), child: const Text('Réessayer')),
+      ElevatedButton(onPressed: () => _load(), child: const Text('Réessayer')),
     ]));
     if (_items.isEmpty) return const Center(
         child: Text('Aucune proposition envoyée', style: TextStyle(color: Colors.grey)));
     return RefreshIndicator(
-      onRefresh: () => _load(null),
+      onRefresh: () => _load(),
       child: ListView.builder(
         padding: const EdgeInsets.all(12),
         itemCount: _items.length,
@@ -1851,13 +2122,56 @@ class _MyProposalsState extends ConsumerState<_MyProposals> {
                       maxLines: 2, overflow: TextOverflow.ellipsis),
                 ],
 
+                // ── Devis final proposé par le parent ──────────────────────
+                if (item['finalRateStatus'] == 'proposed' && item['finalRate'] != null) ...[
+                  const SizedBox(height: 10),
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.orange.shade50,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: Colors.orange.shade300),
+                    ),
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Row(children: [
+                        const Icon(Icons.price_change, color: Colors.orange, size: 18),
+                        const SizedBox(width: 8),
+                        Expanded(child: Text(
+                          'Le parent propose un devis final de ${item['finalRate']} FCFA/séance',
+                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                        )),
+                      ]),
+                      const SizedBox(height: 4),
+                      const Text(
+                        'Validez ce tarif pour créer le contrat. Les autres enseignants ne pourront plus postuler.',
+                        style: TextStyle(fontSize: 12, color: Colors.black54),
+                      ),
+                      const SizedBox(height: 10),
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton.icon(
+                          onPressed: () => _validateFinalRate(item),
+                          icon: const Icon(Icons.check_circle_outline, size: 18),
+                          label: const Text('✅ Valider le devis et créer le contrat'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.green,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                          ),
+                        ),
+                      ),
+                    ]),
+                  ),
+                ],
+
                 // Actions sur la proposition (si pending)
                 if (item['status'] == 'pending') ...[
                   const SizedBox(height: 10),
                   const Divider(height: 1),
                   const SizedBox(height: 6),
+                  // Ligne 1 : Modifier + Discuter
                   Row(children: [
-                    // Modifier
                     Expanded(
                       child: OutlinedButton.icon(
                         onPressed: () => _openEditSheet(item),
@@ -1872,14 +2186,13 @@ class _MyProposalsState extends ConsumerState<_MyProposals> {
                       ),
                     ),
                     const SizedBox(width: 8),
-                    // Discuter
                     Expanded(
                       child: OutlinedButton.icon(
                         onPressed: () {
                           final parentId = item['request']?['clientId'] as String?
                               ?? item['clientId'] as String?;
                           if (parentId != null) {
-                            context.go('/messages/chat/$parentId', extra: {
+                            context.push('/messages/chat/$parentId', extra: {
                               'applicationData': {
                                 ...Map<String, dynamic>.from(item),
                                 'requestId': item['request']?['id'] ?? item['requestId'],
@@ -1898,6 +2211,23 @@ class _MyProposalsState extends ConsumerState<_MyProposals> {
                       ),
                     ),
                   ]),
+                  const SizedBox(height: 6),
+                  // Ligne 2 : Supprimer (retirer la candidature)
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: () => _withdrawProposal(item),
+                      icon: const Icon(Icons.delete_outline, size: 15, color: Colors.red),
+                      label: const Text('Retirer ma candidature',
+                          style: TextStyle(fontSize: 12, color: Colors.red)),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: Colors.red,
+                        side: const BorderSide(color: Colors.red),
+                        padding: const EdgeInsets.symmetric(vertical: 8),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      ),
+                    ),
+                  ),
                 ],
 
                 // Si accepté — messagerie + cours d'essai
@@ -1909,7 +2239,7 @@ class _MyProposalsState extends ConsumerState<_MyProposals> {
                         onPressed: () {
                           final parentId = item['request']?['clientId'] as String?
                               ?? item['clientId'] as String?;
-                          if (parentId != null) context.go('/messages/chat/$parentId');
+                          if (parentId != null) context.push('/messages/chat/$parentId');
                         },
                         icon: const Icon(Icons.chat_bubble_outline, size: 15),
                         label: const Text('Messagerie', style: TextStyle(fontSize: 12)),
@@ -1945,7 +2275,7 @@ class _MyProposalsState extends ConsumerState<_MyProposals> {
       builder: (_) => _TrialSessionSheet(
         clientId: clientId,
         clientName: item['request']?['parentName'] as String? ?? 'Parent',
-        onProposed: () => _load(null),
+        onProposed: () => _load(),
       ),
     );
   }
@@ -1961,7 +2291,7 @@ class _MyProposalsState extends ConsumerState<_MyProposals> {
         application: item,
         requestId: requestId,
         applicationId: item['id'] as String,
-        onSaved: () => _load(null),
+        onSaved: () => _load(),
       ),
     );
   }
@@ -2048,106 +2378,91 @@ class _EditProposalSheetState extends ConsumerState<_EditProposalSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final subject = widget.application['request']?['subject'] as String? ?? '';
-    final level   = widget.application['request']?['classLevel'] as String? ?? '';
-    return Container(
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      padding: EdgeInsets.only(
-        bottom: MediaQuery.of(context).viewInsets.bottom + 16,
-        left: 20, right: 20, top: 8,
-      ),
-      child: SingleChildScrollView(
-        child: Form(
-          key: _formKey,
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Center(child: Container(
-              width: 40, height: 4,
-              margin: const EdgeInsets.only(bottom: 16),
-              decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2)),
-            )),
-            Row(children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF1976D2).withOpacity(0.1), shape: BoxShape.circle),
-                child: const Icon(Icons.school_outlined, color: Color(0xFF1976D2), size: 20),
-              ),
-              const SizedBox(width: 12),
-              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                const Text('Modifier ma proposition',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
-                if (subject.isNotEmpty)
-                  Text('$subject${level.isNotEmpty ? ' · $level' : ''}',
-                      style: const TextStyle(fontSize: 12, color: Colors.grey)),
-              ])),
-            ]),
-            const SizedBox(height: 20),
-            TextFormField(
-              controller: _rateCtrl,
-              keyboardType: TextInputType.number,
-              validator: (v) => (v == null || v.isEmpty || int.tryParse(v) == null) ? 'Tarif invalide' : null,
-              decoration: InputDecoration(
-                labelText: 'Tarif par séance (FCFA) *',
-                prefixIcon: const Icon(Icons.attach_money),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-              ),
-            ),
-            const SizedBox(height: 12),
-            TextFormField(
-              controller: _scheduleCtrl,
-              decoration: InputDecoration(
-                labelText: 'Horaires proposés (ex: Lun & Mer 17h–19h)',
-                prefixIcon: const Icon(Icons.calendar_today_outlined),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-              ),
-            ),
-            const SizedBox(height: 12),
-            TextFormField(
-              controller: _messageCtrl,
-              maxLines: 4,
-              decoration: InputDecoration(
-                labelText: 'Message pour le parent',
-                hintText: 'Présentez votre méthode, votre expérience…',
-                prefixIcon: const Padding(
-                  padding: EdgeInsets.only(bottom: 56),
-                  child: Icon(Icons.message_outlined),
-                ),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-              ),
-            ),
-            const SizedBox(height: 20),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton.icon(
-                onPressed: _saving ? null : _save,
-                icon: _saving
-                    ? const SizedBox(width: 16, height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                    : const Icon(Icons.save_outlined, size: 18),
-                label: Text(_saving ? 'Enregistrement...' : 'Mettre à jour la proposition'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF1976D2),
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                  textStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
-                ),
-              ),
-            ),
-          ]),
+    return Padding(
+      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+      child: Container(
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
         ),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Center(child: Container(
+            margin: const EdgeInsets.only(top: 12), width: 40, height: 4,
+            decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(2)),
+          )),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+            child: Row(children: [
+              const Text('Modifier ma proposition',
+                  style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
+              const Spacer(),
+              IconButton(icon: const Icon(Icons.close), onPressed: () => Navigator.pop(context)),
+            ]),
+          ),
+          const Divider(),
+          Flexible(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+              child: Form(
+                key: _formKey,
+                child: Column(children: [
+                  TextFormField(
+                    controller: _rateCtrl,
+                    keyboardType: TextInputType.number,
+                    decoration: InputDecoration(
+                      labelText: 'Tarif proposé (FCFA/séance)',
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                      suffixText: 'FCFA',
+                    ),
+                    validator: (v) => (v == null || v.isEmpty) ? 'Requis' : null,
+                  ),
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    controller: _messageCtrl,
+                    maxLines: 3,
+                    decoration: InputDecoration(
+                      labelText: 'Message pour le parent',
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    controller: _scheduleCtrl,
+                    decoration: InputDecoration(
+                      labelText: 'Disponibilités proposées',
+                      hintText: 'Ex: Lundi 17h, Mercredi 15h',
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      onPressed: _saving ? null : _save,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF1976D2),
+                        foregroundColor: Colors.white,
+                        minimumSize: const Size.fromHeight(50),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                      child: _saving
+                          ? const SizedBox(width: 20, height: 20,
+                              child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                          : const Text('Enregistrer',
+                              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                    ),
+                  ),
+                ]),
+              ),
+            ),
+          ),
+        ]),
       ),
     );
   }
 }
 
-// ── Bottom sheet cours d'essai ─────────────────────────────────────────────────
+// ── Bottom sheet cours d'essai ──────────────────────────────────────────────
 class _TrialSessionSheet extends ConsumerStatefulWidget {
   final String clientId;
   final String clientName;
@@ -2157,49 +2472,105 @@ class _TrialSessionSheet extends ConsumerStatefulWidget {
     required this.clientName,
     required this.onProposed,
   });
+
   @override
   ConsumerState<_TrialSessionSheet> createState() => _TrialSessionSheetState();
 }
 
 class _TrialSessionSheetState extends ConsumerState<_TrialSessionSheet> {
   final _dateCtrl    = TextEditingController();
-  final _timeCtrl    = TextEditingController(text: '15:00');
-  final _endCtrl     = TextEditingController(text: '17:00');
-  final _addressCtrl = TextEditingController();
   final _messageCtrl = TextEditingController();
-  bool _isFree = true;
-  final _rateCtrl = TextEditingController(text: '0');
-  bool _saving = false;
+  bool _sending = false;
 
   @override
-  void dispose() {
-    _dateCtrl.dispose(); _timeCtrl.dispose(); _endCtrl.dispose();
-    _addressCtrl.dispose(); _messageCtrl.dispose(); _rateCtrl.dispose();
-    super.dispose();
+  void dispose() { _dateCtrl.dispose(); _messageCtrl.dispose(); super.dispose(); }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+      child: Container(
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Center(child: Container(
+            margin: const EdgeInsets.only(top: 12), width: 40, height: 4,
+            decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(2)),
+          )),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+            child: Row(children: [
+              const Text('Proposer un cours d\'essai',
+                  style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
+              const Spacer(),
+              IconButton(icon: const Icon(Icons.close), onPressed: () => Navigator.pop(context)),
+            ]),
+          ),
+          const Divider(),
+          Flexible(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+              child: Column(children: [
+                TextField(
+                  controller: _dateCtrl,
+                  decoration: InputDecoration(
+                    labelText: 'Date et heure proposées',
+                    hintText: 'Ex: Samedi 15 juin à 10h',
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                    prefixIcon: const Icon(Icons.calendar_today),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _messageCtrl,
+                  maxLines: 3,
+                  decoration: InputDecoration(
+                    labelText: 'Message (optionnel)',
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                  ),
+                ),
+                const SizedBox(height: 20),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    onPressed: _sending ? null : _send,
+                    icon: _sending
+                        ? const SizedBox(width: 18, height: 18,
+                            child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                        : const Icon(Icons.send),
+                    label: const Text('Envoyer la proposition'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.purple,
+                      foregroundColor: Colors.white,
+                      minimumSize: const Size.fromHeight(50),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                  ),
+                ),
+              ]),
+            ),
+          ),
+        ]),
+      ),
+    );
   }
 
-  Future<void> _submit() async {
-    if (_dateCtrl.text.isEmpty || _addressCtrl.text.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('Date et adresse obligatoires'),
-        backgroundColor: Colors.orange));
-      return;
-    }
-    setState(() => _saving = true);
+  Future<void> _send() async {
+    if (_dateCtrl.text.trim().isEmpty) return;
+    setState(() => _sending = true);
     try {
-      await ref.read(apiClientProvider).post('/education/sessions/trial', data: {
+      final api = ref.read(apiClientProvider);
+      await api.post('/education/sessions/trial', data: {
         'clientId': widget.clientId,
-        'sessionDate': _dateCtrl.text.trim(),
-        'startTime': _timeCtrl.text.trim(),
-        'endTime': _endCtrl.text.trim(),
-        'locationAddress': _addressCtrl.text.trim(),
-        'trialRate': _isFree ? 0 : (int.tryParse(_rateCtrl.text) ?? 0),
-        if (_messageCtrl.text.isNotEmpty) 'message': _messageCtrl.text.trim(),
+        'proposedDate': _dateCtrl.text.trim(),
+        'message': _messageCtrl.text.trim(),
       });
       if (mounted) {
         Navigator.pop(context);
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('🎁 Cours d\'essai proposé à ${widget.clientName}'),
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('✅ Cours d\'essai proposé — le parent a été notifié'),
           backgroundColor: Colors.purple,
           behavior: SnackBarBehavior.floating,
         ));
@@ -2207,140 +2578,8 @@ class _TrialSessionSheetState extends ConsumerState<_TrialSessionSheet> {
       }
     } catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('$e'), backgroundColor: Colors.red));
+        SnackBar(content: Text('$e'), backgroundColor: Colors.red));
     }
-    if (mounted) setState(() => _saving = false);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      padding: EdgeInsets.only(
-        bottom: MediaQuery.of(context).viewInsets.bottom + 16,
-        left: 20, right: 20, top: 8,
-      ),
-      child: SingleChildScrollView(
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Center(child: Container(
-            width: 40, height: 4,
-            margin: const EdgeInsets.only(bottom: 16),
-            decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2)),
-          )),
-          Row(children: [
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(color: Colors.purple.withOpacity(0.1), shape: BoxShape.circle),
-              child: const Icon(Icons.card_giftcard_outlined, color: Colors.purple, size: 20),
-            ),
-            const SizedBox(width: 12),
-            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              const Text('Proposer un cours d\'essai',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
-              Text('Pour ${widget.clientName}',
-                  style: const TextStyle(fontSize: 12, color: Colors.grey)),
-            ])),
-          ]),
-          const SizedBox(height: 20),
-          // Gratuit ou réduit
-          SwitchListTile(
-            value: _isFree,
-            onChanged: (v) => setState(() => _isFree = v),
-            title: const Text('Cours d\'essai gratuit', style: TextStyle(fontSize: 14)),
-            secondary: const Icon(Icons.volunteer_activism_outlined, color: Colors.purple),
-            activeColor: Colors.purple,
-            contentPadding: EdgeInsets.zero,
-          ),
-          if (!_isFree) ...[
-            TextField(
-              controller: _rateCtrl,
-              keyboardType: TextInputType.number,
-              decoration: InputDecoration(
-                labelText: 'Tarif réduit (FCFA)',
-                prefixIcon: const Icon(Icons.attach_money),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-              ),
-            ),
-            const SizedBox(height: 12),
-          ],
-          // Date
-          TextField(
-            controller: _dateCtrl,
-            decoration: InputDecoration(
-              labelText: 'Date (YYYY-MM-DD) *',
-              prefixIcon: const Icon(Icons.calendar_today_outlined),
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-            ),
-          ),
-          const SizedBox(height: 12),
-          Row(children: [
-            Expanded(child: TextField(
-              controller: _timeCtrl,
-              decoration: InputDecoration(
-                labelText: 'Début',
-                prefixIcon: const Icon(Icons.schedule_outlined),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-              ),
-            )),
-            const SizedBox(width: 10),
-            Expanded(child: TextField(
-              controller: _endCtrl,
-              decoration: InputDecoration(
-                labelText: 'Fin',
-                prefixIcon: const Icon(Icons.schedule_outlined),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-              ),
-            )),
-          ]),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _addressCtrl,
-            decoration: InputDecoration(
-              labelText: 'Adresse *',
-              prefixIcon: const Icon(Icons.location_on_outlined),
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-            ),
-          ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _messageCtrl,
-            maxLines: 2,
-            decoration: InputDecoration(
-              labelText: 'Message au parent (optionnel)',
-              prefixIcon: const Icon(Icons.message_outlined),
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-            ),
-          ),
-          const SizedBox(height: 20),
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton.icon(
-              onPressed: _saving ? null : _submit,
-              icon: _saving
-                  ? const SizedBox(width: 16, height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                  : const Icon(Icons.send_rounded, size: 18),
-              label: Text(_saving ? 'Envoi...' : 'Proposer le cours d\'essai'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.purple,
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(vertical: 14),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                textStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
-              ),
-            ),
-          ),
-        ]),
-      ),
-    );
+    if (mounted) setState(() => _sending = false);
   }
 }

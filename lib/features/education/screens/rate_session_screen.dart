@@ -91,7 +91,7 @@ class _RateSessionScreenState extends ConsumerState<RateSessionScreen> {
       ),
       const SizedBox(height: 32),
       ElevatedButton(
-        onPressed: () => context.go('/education'),
+        onPressed: () => context.pop(),
         style: ElevatedButton.styleFrom(
           backgroundColor: const Color(0xFF1976D2),
           foregroundColor: Colors.white,
@@ -229,7 +229,7 @@ class _RateSessionScreenState extends ConsumerState<RateSessionScreen> {
         const SizedBox(height: 12),
         Center(
           child: TextButton(
-            onPressed: () => context.go('/education'),
+            onPressed: () => context.pop(),
             child: const Text('Passer pour l\'instant',
                 style: TextStyle(color: Colors.grey)),
           ),

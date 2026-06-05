@@ -258,7 +258,7 @@ class _SessionSlot extends StatelessWidget {
     final childName = session['childName'] as String?;
 
     return InkWell(
-      onTap: () => context.go('/education/session/${session['id']}'),
+      onTap: () => context.push('/education/session/${session['id']}'),
       child: Container(
         margin: const EdgeInsets.fromLTRB(10, 0, 10, 8),
         padding: const EdgeInsets.all(10),

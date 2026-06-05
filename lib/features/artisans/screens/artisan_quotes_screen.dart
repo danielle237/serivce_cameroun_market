@@ -409,7 +409,7 @@ class _QuoteCardState extends ConsumerState<_QuoteCard> {
               if (providerId != null)
                 Expanded(
                   child: OutlinedButton.icon(
-                    onPressed: () => context.go('/artisans/portfolio/$providerId'),
+                    onPressed: () => context.push('/artisans/portfolio/$providerId'),
                     icon: const Icon(Icons.photo_library_outlined, size: 16),
                     label: const Text('Voir portfolio', style: TextStyle(fontSize: 13)),
                     style: OutlinedButton.styleFrom(
@@ -449,7 +449,7 @@ class _QuoteCardState extends ConsumerState<_QuoteCard> {
               SizedBox(
                 width: double.infinity,
                 child: TextButton.icon(
-                  onPressed: () => context.go(
+                  onPressed: () => context.push(
                     '/messages/chat/$providerId',
                     extra: {
                       'quoteData': {

@@ -82,7 +82,7 @@ class _ArtisanQuoteDetailScreenState extends ConsumerState<ArtisanQuoteDetailScr
           ? FloatingActionButton.extended(
               onPressed: () {
                 final clientId = _quote!['clientId'] as String?;
-                if (clientId != null) context.go('/messages/chat/$clientId');
+                if (clientId != null) context.push('/messages/chat/$clientId');
               },
               icon: const Icon(Icons.chat_bubble_outline),
               label: const Text('Discuter'),

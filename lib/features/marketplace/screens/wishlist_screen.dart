@@ -53,7 +53,7 @@ class WishlistScreen extends ConsumerWidget {
                       textAlign: TextAlign.center),
                   const SizedBox(height: 24),
                   ElevatedButton(
-                    onPressed: () => context.go('/marketplace'),
+                    onPressed: () => context.push('/marketplace'),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: const Color(0xFF1A237E),
                       foregroundColor: Colors.white,

@@ -1147,6 +1147,10 @@ class _ContractProposalTileState extends ConsumerState<_ContractProposalTile> {
     final colors = {'pending': Colors.orange, 'accepted': Colors.green, 'rejected': Colors.grey};
     final labels = {'pending': 'En attente', 'accepted': '✓ Accepté', 'rejected': 'Rejeté'};
 
+    // trustScore revient en String depuis PostgreSQL (type decimal) → parse safe
+    final rawTrustScore = teacher?['trustScore'];
+    final trustScore = rawTrustScore != null ? num.tryParse(rawTrustScore.toString()) : null;
+
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.all(12),
@@ -1167,7 +1171,7 @@ class _ContractProposalTileState extends ConsumerState<_ContractProposalTile> {
               child: teacher?['profilePhotoUrl'] == null
                   ? const Icon(Icons.person, size: 28, color: Color(0xFF1976D2)) : null,
             ),
-            if (teacher?['trustScore'] != null && (teacher!['trustScore'] as num) >= 80)
+            if (trustScore != null && trustScore >= 80)
               Positioned(
                 bottom: 0, right: 0,
                 child: Container(
@@ -1216,10 +1220,10 @@ class _ContractProposalTileState extends ConsumerState<_ContractProposalTile> {
                 Text(teacher!['city'], style: const TextStyle(fontSize: 12, color: Colors.grey)),
                 const SizedBox(width: 8),
               ],
-              if (teacher?['trustScore'] != null) ...[
+              if (trustScore != null) ...[
                 const Icon(Icons.star_rounded, size: 13, color: Colors.amber),
                 const SizedBox(width: 2),
-                Text('${teacher!['trustScore']}%',
+                Text('${trustScore.toStringAsFixed(0)}%',
                     style: const TextStyle(fontSize: 12, color: Colors.grey, fontWeight: FontWeight.w600)),
               ],
             ]),

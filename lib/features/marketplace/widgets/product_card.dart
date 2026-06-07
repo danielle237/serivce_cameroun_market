@@ -79,8 +79,14 @@ class ProductCard extends StatelessWidget {
                   ),
                 ),
 
-              // Badge en haut à gauche
-              if (product.badge != ProductBadge.none && !outOfStock)
+              // Badge "Sponsorisé" en haut à gauche (prioritaire sur les autres badges)
+              if (product.isSponsored && !outOfStock)
+                Positioned(
+                  top: 8, left: 8,
+                  child: _Badge(label: '📢 Sponsorisé', color: const Color(0xFF7C3AED)),
+                )
+              // Badge produit (featured, trending, etc.)
+              else if (product.badge != ProductBadge.none && !outOfStock)
                 Positioned(
                   top: 8, left: 8,
                   child: _Badge(label: product.badge.label, color: _badgeColor),

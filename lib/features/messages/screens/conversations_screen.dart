@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/api/api_client.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/i18n/app_translations.dart';
 
 final conversationsProvider = FutureProvider.autoDispose<List>((ref) async {
   final api = ref.read(apiClientProvider);
@@ -17,19 +18,20 @@ class ConversationsScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final convsAsync = ref.watch(conversationsProvider);
 
+    final t = AppTranslations.of(context);
     return Scaffold(
-      appBar: AppBar(title: const Text('Messages'), actions: [
+      appBar: AppBar(title: Text(t.t('messages')), actions: [
         IconButton(icon: const Icon(Icons.search), onPressed: () {}),
       ]),
       body: convsAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, _) => Center(child: Text('$e')),
         data: (conversations) => conversations.isEmpty
-            ? const Center(
+            ? Center(
                 child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-                  Icon(Icons.chat_bubble_outline, size: 64, color: AppColors.textLight),
-                  SizedBox(height: 16),
-                  Text('Aucune conversation', style: TextStyle(color: AppColors.textSecondary, fontSize: 16)),
+                  const Icon(Icons.chat_bubble_outline, size: 64, color: AppColors.textLight),
+                  const SizedBox(height: 16),
+                  Text(t.t('no_conversations'), style: const TextStyle(color: AppColors.textSecondary, fontSize: 16)),
                 ]),
               )
             : ListView.separated(

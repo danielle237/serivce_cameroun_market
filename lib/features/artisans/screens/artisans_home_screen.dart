@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import '../../../core/api/api_client.dart';
 import '../../../core/providers/auth_provider.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/i18n/app_translations.dart';
 
 final artisanRequestsProvider = FutureProvider.autoDispose<List>((ref) async {
   final api = ref.read(apiClientProvider);
@@ -20,12 +21,11 @@ class ArtisansHomeScreen extends ConsumerWidget {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Artisans'),
+        title: Text(AppTranslations.of(context).t('artisans')),
         actions: [
-          // Recherche d'artisans (côté client)
           IconButton(
             icon: const Icon(Icons.search),
-            tooltip: 'Trouver un artisan',
+            tooltip: AppTranslations.of(context).t('find_artisan'),
             onPressed: () => context.push('/artisans/search'),
           ),
           Consumer(builder: (_, ref, __) {
@@ -33,7 +33,7 @@ class ArtisansHomeScreen extends ConsumerWidget {
             if (myId == null) return const SizedBox.shrink();
             return IconButton(
               icon: const Icon(Icons.photo_library_outlined),
-              tooltip: 'Mon portfolio',
+              tooltip: AppTranslations.of(context).t('my_portfolio'),
               onPressed: () => context.push('/artisans/portfolio/$myId'),
             );
           }),
@@ -42,7 +42,6 @@ class ArtisansHomeScreen extends ConsumerWidget {
       floatingActionButton: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // Mode urgence (artisans uniquement)
           Consumer(builder: (_, ref, __) {
             final isProvider = ref.read(authStateProvider).value?.user?['activeMode'] == 'provider';
             if (!isProvider) return const SizedBox.shrink();
@@ -52,7 +51,7 @@ class ArtisansHomeScreen extends ConsumerWidget {
                 heroTag: 'urgence',
                 onPressed: () => _showUrgenceSheet(context, ref),
                 icon: const Icon(Icons.flash_on_rounded),
-                label: const Text('Disponible maintenant'),
+                label: Text(AppTranslations.of(context).t('available_now')),
                 backgroundColor: Colors.red,
               ),
             );
@@ -61,7 +60,7 @@ class ArtisansHomeScreen extends ConsumerWidget {
             heroTag: 'new',
             onPressed: () => context.push('/artisans/request'),
             icon: const Icon(Icons.add),
-            label: const Text('Nouvelle demande'),
+            label: Text(AppTranslations.of(context).t('new_request')),
           ),
         ],
       ),
@@ -72,20 +71,20 @@ class ArtisansHomeScreen extends ConsumerWidget {
           const SizedBox(height: 12),
           Text('$e', textAlign: TextAlign.center, style: const TextStyle(color: AppColors.textSecondary)),
           const SizedBox(height: 12),
-          ElevatedButton(onPressed: () => ref.invalidate(artisanRequestsProvider), child: const Text('Réessayer')),
+          ElevatedButton(onPressed: () => ref.invalidate(artisanRequestsProvider), child: Text(AppTranslations.of(context).t('retry'))),
         ])),
         data: (requests) => requests.isEmpty
             ? Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
                 const Icon(Icons.build_outlined, size: 80, color: AppColors.textLight),
                 const SizedBox(height: 16),
-                const Text('Aucune demande', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: AppColors.textSecondary)),
+                Text(AppTranslations.of(context).t('no_requests'), style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: AppColors.textSecondary)),
                 const SizedBox(height: 8),
-                const Text('Publiez une demande pour trouver un artisan', style: TextStyle(color: AppColors.textSecondary, fontSize: 13)),
+                Text(AppTranslations.of(context).t('post_to_find_artisan'), style: const TextStyle(color: AppColors.textSecondary, fontSize: 13)),
                 const SizedBox(height: 24),
                 ElevatedButton.icon(
                   onPressed: () => context.push('/artisans/request'),
                   icon: const Icon(Icons.add),
-                  label: const Text('Publier une demande'),
+                  label: Text(AppTranslations.of(context).t('publish_request')),
                 ),
               ]))
             : RefreshIndicator(

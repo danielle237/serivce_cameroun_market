@@ -173,6 +173,7 @@ class Product {
   final List<String> colors;
   final bool isActive;
   final bool isPinned;            // Épinglé manuellement par Tokos
+  final bool isSponsored;         // Vendeur a payé pour apparaître en premier
   final ProductBadge badge;
   final int viewCount;
   final int orderCount;
@@ -196,6 +197,7 @@ class Product {
     this.colors = const [],
     this.isActive = true,
     this.isPinned = false,
+    this.isSponsored = false,
     this.badge = ProductBadge.none,
     this.viewCount = 0,
     this.orderCount = 0,
@@ -245,6 +247,7 @@ class Product {
     colors:         List<String>.from(j['colors'] ?? []),
     isActive:       j['isActive'] ?? j['is_active'] as bool? ?? true,
     isPinned:       j['isPinned'] ?? j['is_pinned'] as bool? ?? false,
+    isSponsored:    j['isSponsored'] ?? j['is_sponsored'] as bool? ?? false,
     badge:          ProductBadge.values.firstWhere(
       (b) => b.name == (j['badge'] ?? 'none'),
       orElse: () => ProductBadge.none,

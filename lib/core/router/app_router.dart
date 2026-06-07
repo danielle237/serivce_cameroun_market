@@ -32,6 +32,10 @@ import '../../features/messages/screens/conversations_screen.dart';
 import '../../features/messages/screens/chat_screen.dart';
 import '../../features/profile/screens/profile_screen.dart';
 import '../../features/immobilier/screens/immobilier_screen.dart';
+import '../../features/immobilier/screens/property_detail_screen.dart';
+import '../../features/immobilier/screens/publish_property_screen.dart';
+import '../../features/immobilier/screens/my_bookings_screen.dart';
+import '../../features/immobilier/screens/admin_immobilier_screen.dart';
 import '../../features/moto/screens/moto_screen.dart';
 import '../../features/marketplace/screens/marketplace_home_screen.dart';
 import '../../features/marketplace/screens/cart_screen.dart';
@@ -51,15 +55,41 @@ import '../../features/marketplace/screens/loyalty_screen.dart';
 import '../../features/marketplace/screens/loyalty_config_screen.dart';
 import '../../features/marketplace/screens/notification_prefs_screen.dart';
 import '../../features/menagere/screens/menagere_screen.dart';
+import '../../features/menagere/screens/menagere_profile_detail_screen.dart';
+import '../../features/menagere/screens/menagere_contract_screen.dart';
+import '../../features/menagere/screens/menagere_worker_dashboard_screen.dart';
+import '../../features/menagere/screens/menagere_publish_screen.dart';
+import '../../features/rental/screens/rental_screen.dart';
+import '../../features/donation/screens/donation_screen.dart';
+import '../../features/ads/screens/promote_listing_screen.dart';
 import '../providers/auth_provider.dart';
 
+// ── RouterNotifier : signal GoRouter de relancer redirect() sans recréer le routeur ──
+class _RouterNotifier extends ChangeNotifier {
+  _RouterNotifier(Ref ref) {
+    // Écoute authStateProvider — notifie GoRouter à chaque changement d'auth
+    ref.listen<AsyncValue<AuthState>>(authStateProvider, (_, __) {
+      notifyListeners();
+    });
+  }
+}
+
+final _routerNotifierProvider = Provider<_RouterNotifier>(
+  (ref) => _RouterNotifier(ref),
+);
+
 final appRouterProvider = Provider<GoRouter>((ref) {
-  final authState = ref.watch(authStateProvider);
+  // On watch le notifier (ChangeNotifier) et non authStateProvider directement
+  // → GoRouter est créé UNE SEULE FOIS, refreshListenable déclenche redirect()
+  final notifier = ref.watch(_routerNotifierProvider);
 
   return GoRouter(
     initialLocation: '/',
+    refreshListenable: notifier, // re-évalue redirect() sans recréer le routeur
     redirect: (context, state) {
-      // Auth encore en cours de chargement → rester sur le splash '/'
+      // Lire (pas watch) l'état auth courant dans la fonction redirect
+      final authState = ref.read(authStateProvider);
+
       if (authState.isLoading) {
         return state.matchedLocation == '/' ? null : '/';
       }
@@ -108,10 +138,11 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       ShellRoute(
         builder: (context, state, child) => MainShell(child: child),
         routes: [
-          GoRoute(path: '/home', builder: (c, s) => const HomeScreen()),
-          GoRoute(path: '/wallet', builder: (c, s) => const WalletScreen()),
+          GoRoute(path: '/home',     builder: (c, s) => const HomeScreen()),
+          GoRoute(path: '/wallet',   builder: (c, s) => const WalletScreen()),
           GoRoute(path: '/messages', builder: (c, s) => const ConversationsScreen()),
-          GoRoute(path: '/profile', builder: (c, s) => const ProfileScreen()),
+          GoRoute(path: '/donation', builder: (c, s) => const DonationScreen()),
+          GoRoute(path: '/profile',  builder: (c, s) => const ProfileScreen()),
         ],
       ),
 
@@ -184,6 +215,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       GoRoute(path: '/education/schedule-parent', builder: (c, s) => const WeeklyScheduleScreen(readOnly: true)),
       GoRoute(path: '/education/billing', builder: (c, s) => const MonthlyBillingScreen()),
       GoRoute(path: '/education/groups', builder: (c, s) => const GroupSessionsScreen()),
+      GoRoute(path: '/rental', builder: (c, s) => const RentalScreen()),
       GoRoute(
         path: '/education/portfolio/:teacherId',
         builder: (c, s) => TeacherPortfolioScreen(teacherId: s.pathParameters['teacherId']!),
@@ -247,8 +279,52 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         },
       ),
       GoRoute(path: '/immobilier', builder: (c, s) => const ImmobilierScreen()),
+      GoRoute(
+        path: '/immobilier/search',
+        builder: (c, s) => ImmobilierSearchScreen(
+          initialCategorySlug: s.uri.queryParameters['categorySlug'],
+        ),
+      ),
+      GoRoute(
+        path: '/immobilier/publish',
+        builder: (c, s) => const PublishPropertyScreen(),
+      ),
+      GoRoute(
+        path: '/immobilier/:id',
+        builder: (c, s) => PropertyDetailScreen(propertyId: s.pathParameters['id']!),
+      ),
+      GoRoute(
+        path: '/immobilier/my/bookings',
+        builder: (c, s) => const MyImmobilierBookingsScreen(),
+      ),
+      GoRoute(
+        path: '/admin/immobilier',
+        builder: (c, s) => const AdminImmobilierScreen(),
+      ),
       GoRoute(path: '/moto', builder: (c, s) => const MotoScreen()),
       GoRoute(path: '/menagere', builder: (c, s) => const MenagereScreen()),
+      GoRoute(
+        path: '/menagere/profiles/:profileId',
+        builder: (c, s) => MenagereProfileDetailScreen(profileId: s.pathParameters['profileId']!),
+      ),
+      GoRoute(
+        path: '/menagere/contracts/:contractId',
+        builder: (c, s) => MenagereContractScreen(contractId: s.pathParameters['contractId']!),
+      ),
+      GoRoute(path: '/menagere/worker-dashboard', builder: (c, s) => const MenagereWorkerDashboard()),
+      GoRoute(path: '/menagere/publish', builder: (c, s) => const MenagerePublishScreen()),
+
+      // ── Ads / Sponsoring ──────────────────────────────────────────────────
+      GoRoute(
+        path: '/ads/promote/:productId',
+        builder: (c, s) {
+          final extra = s.extra as Map<String, dynamic>?;
+          return PromoteListingScreen(
+            productId: s.pathParameters['productId']!,
+            productName: extra?['productName'] as String? ?? 'Produit',
+          );
+        },
+      ),
     ],
     errorBuilder: (context, state) => Scaffold(
       body: Center(child: Text('Page introuvable: ${state.uri}')),
@@ -267,7 +343,7 @@ class MainShell extends StatefulWidget {
 class _MainShellState extends State<MainShell> {
   int _currentIndex = 0;
 
-  final _tabs = ['/home', '/wallet', '/messages', '/profile'];
+  final _tabs = ['/home', '/wallet', '/messages', '/donation', '/profile'];
 
   @override
   Widget build(BuildContext context) {
@@ -275,15 +351,36 @@ class _MainShellState extends State<MainShell> {
       body: widget.child,
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _currentIndex,
+        type: BottomNavigationBarType.fixed, // obligatoire à 5 items
+        selectedItemColor: const Color(0xFF1A237E),
+        unselectedItemColor: Colors.grey,
+        selectedFontSize: 11,
+        unselectedFontSize: 11,
         onTap: (i) {
           setState(() => _currentIndex = i);
           context.go(_tabs[i]);
         },
         items: const [
-          BottomNavigationBarItem(icon: Icon(Icons.home_outlined), activeIcon: Icon(Icons.home), label: 'Accueil'),
-          BottomNavigationBarItem(icon: Icon(Icons.account_balance_wallet_outlined), activeIcon: Icon(Icons.account_balance_wallet), label: 'Wallet'),
-          BottomNavigationBarItem(icon: Icon(Icons.chat_bubble_outline), activeIcon: Icon(Icons.chat_bubble), label: 'Messages'),
-          BottomNavigationBarItem(icon: Icon(Icons.person_outline), activeIcon: Icon(Icons.person), label: 'Profil'),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.home_outlined),
+            activeIcon: Icon(Icons.home),
+            label: 'Accueil'),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.account_balance_wallet_outlined),
+            activeIcon: Icon(Icons.account_balance_wallet),
+            label: 'Wallet'),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.chat_bubble_outline),
+            activeIcon: Icon(Icons.chat_bubble),
+            label: 'Chat'),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.favorite_border),
+            activeIcon: Icon(Icons.favorite, color: Color(0xFFE53935)),
+            label: 'Don'),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.person_outline),
+            activeIcon: Icon(Icons.person),
+            label: 'Moi'),
         ],
       ),
     );

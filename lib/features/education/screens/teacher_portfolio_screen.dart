@@ -73,9 +73,9 @@ class _TeacherPortfolioScreenState extends ConsumerState<TeacherPortfolioScreen>
 
   Widget _buildHeader() {
     final p = _profile!;
-    final trust = (p['trustScore'] as num?)?.toInt() ?? 0;
-    final avg = (_ratings?['average'] as num?)?.toDouble() ?? 0.0;
-    final total = (_ratings?['total'] as num?)?.toInt() ?? 0;
+    final trust = num.tryParse(p['trustScore']?.toString() ?? '')?.toInt() ?? 0;
+    final avg = num.tryParse(_ratings?['average']?.toString() ?? '')?.toDouble() ?? 0.0;
+    final total = num.tryParse(_ratings?['total']?.toString() ?? '')?.toInt() ?? 0;
 
     return SliverAppBar(
       expandedHeight: 260,
@@ -252,7 +252,7 @@ class _TeacherPortfolioScreenState extends ConsumerState<TeacherPortfolioScreen>
     if (_ratings == null) return const Center(child: CircularProgressIndicator());
     final ratings = _ratings!['ratings'] as List? ?? [];
     final breakdown = _ratings!['breakdown'] as Map<String, dynamic>? ?? {};
-    final avg = (_ratings!['average'] as num?)?.toDouble() ?? 0.0;
+    final avg = num.tryParse(_ratings!['average']?.toString() ?? '')?.toDouble() ?? 0.0;
 
     if (ratings.isEmpty) {
       return Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
@@ -296,7 +296,7 @@ class _TeacherPortfolioScreenState extends ConsumerState<TeacherPortfolioScreen>
   }
 
   Widget _breakdownRow(String label, dynamic value) {
-    final v = (value as num).toDouble();
+    final v = num.tryParse(value?.toString() ?? '')?.toDouble() ?? 0.0;
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 2),
       child: Row(children: [
@@ -315,9 +315,9 @@ class _TeacherPortfolioScreenState extends ConsumerState<TeacherPortfolioScreen>
 
   Widget _buildStats() {
     final p = _profile!;
-    final totalSessions = (p['totalSessions'] as num?)?.toInt() ?? 0;
-    final trust = (p['trustScore'] as num?)?.toInt() ?? 0;
-    final avg = (_ratings?['average'] as num?)?.toDouble() ?? 0.0;
+    final totalSessions = num.tryParse(p['totalSessions']?.toString() ?? '')?.toInt() ?? 0;
+    final trust = num.tryParse(p['trustScore']?.toString() ?? '')?.toInt() ?? 0;
+    final avg = num.tryParse(_ratings?['average']?.toString() ?? '')?.toDouble() ?? 0.0;
 
     return ListView(padding: const EdgeInsets.all(16), children: [
       Row(children: [
@@ -369,7 +369,7 @@ class _RatingCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final overall = (rating['overall'] as num?)?.toDouble() ?? 0;
+    final overall = num.tryParse(rating['overall']?.toString() ?? '')?.toDouble() ?? 0.0;
     final comment = rating['comment'] as String?;
 
     return Card(

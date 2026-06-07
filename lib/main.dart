@@ -4,6 +4,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'core/router/app_router.dart';
+import 'core/providers/auth_provider.dart';
 import 'core/providers/locale_provider.dart';
 import 'core/providers/connectivity_provider.dart';
 import 'core/services/cache_service.dart';
@@ -41,6 +42,9 @@ void main() async {
   // Cache local (Hive) — réduit la consommation data sur MTN/Orange
   await CacheService.init();
 
+  // Pré-lire le token auth pour éviter le flash d'écran de chargement au démarrage
+  await AuthNotifier.preloadAuth();
+
   runApp(const ProviderScope(child: W2DApp()));
 }
 
@@ -60,7 +64,7 @@ class W2DApp extends ConsumerWidget {
       darkTheme: AppTheme.darkTheme,
       themeMode: ThemeMode.light,
       locale: locale,
-      supportedLocales: const [Locale('fr'), Locale('en')],
+      supportedLocales: const [Locale('fr'), Locale('en'), Locale('ar')],
       localizationsDelegates: const [
         GlobalMaterialLocalizations.delegate,
         GlobalWidgetsLocalizations.delegate,
@@ -68,11 +72,15 @@ class W2DApp extends ConsumerWidget {
       ],
       routerConfig: router,
       builder: (context, child) {
-        // Initialiser le provider de connectivité
+        // Connectivité + scale fixe + RTL arabe
         ref.watch(connectivityProvider);
-        return MediaQuery(
-          data: MediaQuery.of(context).copyWith(textScaler: const TextScaler.linear(1.0)),
-          child: OfflineBanner(child: child!),
+        final isRtl = locale.languageCode == 'ar';
+        return Directionality(
+          textDirection: isRtl ? TextDirection.rtl : TextDirection.ltr,
+          child: MediaQuery(
+            data: MediaQuery.of(context).copyWith(textScaler: const TextScaler.linear(1.0)),
+            child: OfflineBanner(child: child!),
+          ),
         );
       },
     );

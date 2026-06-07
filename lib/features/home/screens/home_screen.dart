@@ -1,16 +1,37 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:cached_network_image/cached_network_image.dart';
+import 'package:shimmer/shimmer.dart';
 import '../../../core/api/api_client.dart';
 import '../../../core/providers/auth_provider.dart';
 import '../../../core/providers/badges_provider.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/i18n/app_translations.dart';
+import '../../../core/providers/locale_provider.dart';
+import '../widgets/marquee_ticker.dart';
+import '../../ads/providers/ads_provider.dart';
+import '../../ads/widgets/interstitial_ad_overlay.dart';
 
-// ── Providers annonces pour la page d'accueil ─────────────────────────────────
+// ── Provider bannières — keepAlive pour ne pas refetch à chaque changement d'onglet ──
+// autoDispose + keepAlive() = chargé une fois, jamais libéré tant que l'app tourne
+final _bannersProvider = FutureProvider.autoDispose<List<Map<String, dynamic>>>((ref) async {
+  ref.keepAlive(); // keepAlive() nécessite autoDispose — survit aux rebuilds
+  try {
+    final api = ref.read(apiClientProvider);
+    final res = await api.get('/banners/active', cacheTtl: const Duration(minutes: 30));
+    final data = res.data;
+    if (data is List) return data.map((b) => Map<String, dynamic>.from(b)).toList();
+    return [];
+  } catch (_) { return []; }
+});
+
+// ── Providers annonces — cache 5 min (défaut), pas de forceRefresh ─────────────
 final _homeEducationRequestsProvider = FutureProvider.autoDispose<List>((ref) async {
   try {
     final api = ref.read(apiClientProvider);
-    final res = await api.get('/education/requests', forceRefresh: true);
+    final res = await api.get('/education/requests');
     final data = res.data;
     return data is List ? data.take(5).toList() : [];
   } catch (_) { return []; }
@@ -19,7 +40,7 @@ final _homeEducationRequestsProvider = FutureProvider.autoDispose<List>((ref) as
 final _homeArtisanRequestsProvider = FutureProvider.autoDispose<List>((ref) async {
   try {
     final api = ref.read(apiClientProvider);
-    final res = await api.get('/artisans/requests', forceRefresh: true);
+    final res = await api.get('/artisans/requests');
     final data = res.data;
     return data is List ? data.take(5).toList() : [];
   } catch (_) { return []; }
@@ -34,6 +55,24 @@ class HomeScreen extends ConsumerStatefulWidget {
 
 class _HomeScreenState extends ConsumerState<HomeScreen> {
   bool _switching = false;
+  bool _interstitialShown = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // Afficher l'interstitiel 2s après le chargement de l'écran (une seule fois par session)
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      Future.delayed(const Duration(seconds: 2), _maybeShowInterstitial);
+    });
+  }
+
+  Future<void> _maybeShowInterstitial() async {
+    if (_interstitialShown || !mounted) return;
+    _interstitialShown = true;
+    final adAsync = await ref.read(interstitialAdProvider.future);
+    if (adAsync == null || !mounted) return;
+    await showInterstitialAd(context, adAsync, ref);
+  }
 
   Future<void> _switchMode(String current) async {
     final next = current == 'provider' ? 'client' : 'provider';
@@ -122,13 +161,36 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   ),
                   const SizedBox(height: 16),
 
+                  // ── Ticker défilant ────────────────────────────────────
+                  const MarqueeTicker(),
+                  const SizedBox(height: 10),
+
                   // ── Carte rôle actif ────────────────────────────────────
                   _RoleBanner(isProvider: isProvider, user: user),
-                  const SizedBox(height: 20),
+                  const SizedBox(height: 16),
+
+                  // ── Bannières défilantes ────────────────────────────────
+                  Consumer(builder: (context, ref, _) {
+                    final bannersAsync = ref.watch(_bannersProvider);
+                    return bannersAsync.when(
+                      loading: () => _BannerShimmer(),
+                      error: (_, __) => const SizedBox.shrink(),
+                      data: (banners) => banners.isEmpty
+                          ? const SizedBox.shrink()
+                          : _BannerCarousel(banners: banners),
+                    );
+                  }),
+                  const SizedBox(height: 16),
+
+                  // ── Bannière services horizontale ───────────────────────
+                  if (!isProvider) const _ServicesBanner(),
+                  if (!isProvider) const SizedBox(height: 20),
 
                   // ── Grille de services ──────────────────────────────────
                   Text(
-                    isProvider ? 'Mes espaces de travail' : 'Nos services',
+                    isProvider
+                        ? AppTranslations.of(context).t('workspaces')
+                        : AppTranslations.of(context).t('our_services'),
                     style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
                   ),
                   const SizedBox(height: 12),
@@ -151,9 +213,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      const Text('Activité récente',
-                          style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
-                      TextButton(onPressed: () {}, child: const Text('Voir tout')),
+                      Text(AppTranslations.of(context).t('recent_activity'),
+                          style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
+                      TextButton(
+                        onPressed: () {},
+                        child: Text(AppTranslations.of(context).t('see_all')),
+                      ),
                     ],
                   ),
                   const SizedBox(height: 8),
@@ -179,8 +244,273 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 }
 
+// ═════════════════════════════════════════════════════════════════════════════
+// BANNIÈRE SERVICES HORIZONTALE
+// ═════════════════════════════════════════════════════════════════════════════
+class _ServicesBanner extends StatelessWidget {
+  const _ServicesBanner();
+
+  // labelKey → traduit dans _SvcBannerCard via AppTranslations.of(context).t()
+  static const _services = [
+    _SvcBanner('🛒', 'marketplace', Color(0xFF8B5CF6), '/marketplace'),
+    _SvcBanner('🎓', 'education',   Color(0xFF4F46E5), '/education'),
+    _SvcBanner('🔧', 'artisans',    Color(0xFFF59E0B), '/artisans'),
+    _SvcBanner('🏠', 'real_estate', Color(0xFF10B981), '/immobilier'),
+    _SvcBanner('🧹', 'housekeeping',Color(0xFFEC4899), '/menagere'),
+    _SvcBanner('🚗', 'rental',      Color(0xFF0288D1), '/rental'),
+    _SvcBanner('🛵', 'moto',        Color(0xFFEF4444), '/moto'),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 96,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 2),
+        itemCount: _services.length,
+        separatorBuilder: (_, __) => const SizedBox(width: 10),
+        itemBuilder: (_, i) => _SvcBannerCard(svc: _services[i]),
+      ),
+    );
+  }
+}
+
+class _SvcBanner {
+  final String emoji, labelKey, route;
+  final Color color;
+  const _SvcBanner(this.emoji, this.labelKey, this.color, this.route);
+}
+
+class _SvcBannerCard extends StatelessWidget {
+  final _SvcBanner svc;
+  const _SvcBannerCard({required this.svc});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: () => context.push(svc.route),
+      child: Container(
+        width: 80,
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: [svc.color, svc.color.withOpacity(0.75)],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+            BoxShadow(
+              color: svc.color.withOpacity(0.35),
+              blurRadius: 8, offset: const Offset(0, 4)),
+          ],
+        ),
+        child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+          Text(svc.emoji, style: const TextStyle(fontSize: 28)),
+          const SizedBox(height: 6),
+          Text(
+            AppTranslations.of(context).t(svc.labelKey),
+            style: const TextStyle(
+              color: Colors.white, fontSize: 11,
+              fontWeight: FontWeight.w700),
+            textAlign: TextAlign.center,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ]),
+      ),
+    );
+  }
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// CAROUSEL BANNIÈRES
+// ═════════════════════════════════════════════════════════════════════════════
+class _BannerCarousel extends StatefulWidget {
+  final List<Map<String, dynamic>> banners;
+  const _BannerCarousel({required this.banners});
+  @override
+  State<_BannerCarousel> createState() => _BannerCarouselState();
+}
+
+class _BannerCarouselState extends State<_BannerCarousel> {
+  final _ctrl = PageController();
+  int _current = 0;
+  Timer? _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.banners.length > 1) {
+      _timer = Timer.periodic(const Duration(seconds: 4), (_) {
+        if (!mounted) return;
+        final next = (_current + 1) % widget.banners.length;
+        _ctrl.animateToPage(next,
+          duration: const Duration(milliseconds: 500),
+          curve: Curves.easeInOut);
+      });
+    }
+  }
+
+  @override
+  void dispose() { _timer?.cancel(); _ctrl.dispose(); super.dispose(); }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(children: [
+      SizedBox(
+        height: 150,
+        child: PageView.builder(
+          controller: _ctrl,
+          itemCount: widget.banners.length,
+          onPageChanged: (i) => setState(() => _current = i),
+          itemBuilder: (_, i) => _BannerCard(banner: widget.banners[i]),
+        ),
+      ),
+      // Dots indicateur
+      if (widget.banners.length > 1) ...[
+        const SizedBox(height: 8),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: List.generate(widget.banners.length, (i) => AnimatedContainer(
+            duration: const Duration(milliseconds: 300),
+            margin: const EdgeInsets.symmetric(horizontal: 3),
+            width: _current == i ? 20 : 6,
+            height: 6,
+            decoration: BoxDecoration(
+              color: _current == i
+                ? const Color(0xFF1A237E)
+                : Colors.grey.shade300,
+              borderRadius: BorderRadius.circular(3)),
+          )),
+        ),
+      ],
+    ]);
+  }
+}
+
+class _BannerCard extends StatelessWidget {
+  final Map<String, dynamic> banner;
+  const _BannerCard({required this.banner});
+
+  Color _parseColor(String? hex, Color fallback) {
+    if (hex == null) return fallback;
+    try {
+      return Color(int.parse(hex.replaceFirst('#', '0xFF')));
+    } catch (_) { return fallback; }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final imageUrl  = banner['imageUrl']   as String?;
+    final title     = banner['title']      as String? ?? '';
+    final subtitle  = banner['subtitle']   as String?;
+    final ctaLabel  = banner['ctaLabel']   as String?;
+    final route     = banner['targetRoute']as String?;
+    final bgColor   = _parseColor(banner['bgColor']   as String?, const Color(0xFF1A237E));
+    final textColor = _parseColor(banner['textColor'] as String?, Colors.white);
+
+    return GestureDetector(
+      onTap: route != null ? () => context.push(route) : null,
+      child: Container(
+        margin: const EdgeInsets.symmetric(horizontal: 2),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(16),
+          color: bgColor,
+          boxShadow: [BoxShadow(
+            color: bgColor.withOpacity(0.35),
+            blurRadius: 12, offset: const Offset(0, 4))],
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(16),
+          child: Stack(children: [
+            // Image de fond
+            if (imageUrl != null)
+              Positioned.fill(
+                child: CachedNetworkImage(
+                  imageUrl: imageUrl,
+                  fit: BoxFit.cover,
+                  placeholder: (_, __) => Container(color: bgColor),
+                  errorWidget:  (_, __, ___) => Container(color: bgColor),
+                  memCacheHeight: 300, maxHeightDiskCache: 300,
+                ),
+              ),
+            // Gradient sombre sur le bas
+            Positioned.fill(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      Colors.transparent,
+                      Colors.black.withOpacity(0.65),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            // Contenu texte
+            Positioned(
+              bottom: 14, left: 16, right: 16,
+              child: Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
+                Expanded(child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(title,
+                      style: TextStyle(
+                        color: textColor, fontSize: 15,
+                        fontWeight: FontWeight.w800,
+                        shadows: [Shadow(color: Colors.black38, blurRadius: 4)]),
+                      maxLines: 2),
+                    if (subtitle != null) ...[
+                      const SizedBox(height: 3),
+                      Text(subtitle,
+                        style: TextStyle(
+                          color: textColor.withOpacity(0.85), fontSize: 11,
+                          shadows: [Shadow(color: Colors.black26, blurRadius: 3)]),
+                        maxLines: 1, overflow: TextOverflow.ellipsis),
+                    ],
+                  ],
+                )),
+                if (ctaLabel != null && route != null) ...[
+                  const SizedBox(width: 10),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(20)),
+                    child: Text(ctaLabel,
+                      style: TextStyle(
+                        color: bgColor, fontSize: 11,
+                        fontWeight: FontWeight.w800)),
+                  ),
+                ],
+              ]),
+            ),
+          ]),
+        ),
+      ),
+    );
+  }
+}
+
+class _BannerShimmer extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) => Shimmer.fromColors(
+    baseColor: Colors.grey.shade300,
+    highlightColor: Colors.grey.shade100,
+    child: Container(
+      height: 150, margin: const EdgeInsets.symmetric(horizontal: 2),
+      decoration: BoxDecoration(
+        color: Colors.white, borderRadius: BorderRadius.circular(16)),
+    ),
+  );
+}
+
 // ── Header ────────────────────────────────────────────────────────────────────
-class _Header extends StatelessWidget {
+class _Header extends ConsumerWidget {
   final String name;
   final Map<String, dynamic>? user;
   final bool isProvider;
@@ -195,31 +525,147 @@ class _Header extends StatelessWidget {
     required this.onSwitch,
   });
 
+  // ── Sélecteur de langue ──────────────────────────────────────────────────
+  void _showLanguagePicker(BuildContext context, WidgetRef ref, String currentLang) {
+    const langs = [
+      ('fr', '🇫🇷', 'Français'),
+      ('en', '🇬🇧', 'English'),
+      ('ar', '🇸🇦', 'عربي'),
+    ];
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => Padding(
+        padding: const EdgeInsets.fromLTRB(24, 16, 24, 32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Handle
+            Center(
+              child: Container(
+                width: 36, height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade300,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              AppTranslations.of(context).t('choose_language'),
+              style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 16),
+            ...langs.map((l) {
+              final (code, flag, label) = l;
+              final selected = code == currentLang;
+              return GestureDetector(
+                onTap: () async {
+                  Navigator.pop(ctx);
+                  await ref.read(localeProvider.notifier).setLocale(code);
+                },
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  margin: const EdgeInsets.only(bottom: 10),
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                  decoration: BoxDecoration(
+                    color: selected
+                        ? const Color(0xFF1A237E).withAlpha(20)
+                        : Colors.grey.shade50,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: selected ? const Color(0xFF1A237E) : Colors.grey.shade200,
+                      width: selected ? 2 : 1,
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      Text(flag, style: const TextStyle(fontSize: 24)),
+                      const SizedBox(width: 14),
+                      Text(
+                        label,
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: selected ? FontWeight.w700 : FontWeight.normal,
+                          color: selected ? const Color(0xFF1A237E) : Colors.black87,
+                        ),
+                      ),
+                      const Spacer(),
+                      if (selected)
+                        const Icon(Icons.check_circle,
+                            color: Color(0xFF1A237E), size: 20),
+                    ],
+                  ),
+                ),
+              );
+            }),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final t = AppTranslations.of(context);
+    final currentLang = ref.watch(localeProvider).value?.languageCode ?? 'fr';
+
     return Row(children: [
       // Avatar
       CircleAvatar(
         radius: 26,
         backgroundColor: AppColors.primary.withOpacity(0.12),
-        backgroundImage: user?['profilePhotoUrl'] != null
-            ? NetworkImage(user!['profilePhotoUrl']) : null,
-        child: user?['profilePhotoUrl'] == null
-            ? Text(
+        child: user?['profilePhotoUrl'] != null
+            ? ClipOval(
+                child: CachedNetworkImage(
+                  imageUrl: user!['profilePhotoUrl'] as String,
+                  width: 52, height: 52, fit: BoxFit.cover,
+                  memCacheWidth: 104,
+                  placeholder: (_, __) => const SizedBox.shrink(),
+                  errorWidget: (_, __, ___) => Text(
+                    name.isNotEmpty ? name[0].toUpperCase() : '?',
+                    style: const TextStyle(
+                        fontSize: 20, fontWeight: FontWeight.bold, color: AppColors.primary),
+                  ),
+                ),
+              )
+            : Text(
                 name.isNotEmpty ? name[0].toUpperCase() : '?',
                 style: const TextStyle(
                     fontSize: 20, fontWeight: FontWeight.bold, color: AppColors.primary),
-              )
-            : null,
+              ),
       ),
       const SizedBox(width: 12),
       Expanded(
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text('Bonjour,',
+          Text(t.t('hello'),
               style: TextStyle(color: Colors.grey.shade500, fontSize: 13)),
           Text(name,
               style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700)),
         ]),
+      ),
+
+      // 🌐 Bouton langue
+      GestureDetector(
+        onTap: () => _showLanguagePicker(context, ref, currentLang),
+        child: Container(
+          margin: const EdgeInsets.only(right: 8),
+          padding: const EdgeInsets.all(7),
+          decoration: BoxDecoration(
+            color: Colors.grey.shade100,
+            shape: BoxShape.circle,
+            border: Border.all(color: Colors.grey.shade200),
+          ),
+          child: Text(
+            currentLang == 'fr' ? '🇫🇷'
+                : currentLang == 'en' ? '🇬🇧'
+                : '🇸🇦',
+            style: const TextStyle(fontSize: 16),
+          ),
+        ),
       ),
 
       // Toggle Client / Prestataire
@@ -252,7 +698,7 @@ class _Header extends StatelessWidget {
                   ),
                   const SizedBox(width: 5),
                   Text(
-                    isProvider ? 'Prestataire' : 'Client',
+                    isProvider ? t.t('provider') : t.t('client'),
                     style: const TextStyle(
                         color: Colors.white, fontSize: 12, fontWeight: FontWeight.w700),
                   ),
@@ -274,6 +720,7 @@ class _RoleBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final t = AppTranslations.of(context);
     final score = user?['trustScore'] ?? '0.0';
     final kyc = (user?['kycStatus'] ?? 'unverified') == 'verified';
 
@@ -315,7 +762,7 @@ class _RoleBanner extends StatelessWidget {
                 borderRadius: BorderRadius.circular(10),
               ),
               child: Text(
-                isProvider ? '🔧 MODE PRESTATAIRE' : '👤 MODE CLIENT',
+                isProvider ? t.t('mode_provider') : t.t('mode_client'),
                 style: const TextStyle(
                     color: Colors.white, fontSize: 10, fontWeight: FontWeight.w800,
                     letterSpacing: 0.5),
@@ -329,16 +776,14 @@ class _RoleBanner extends StatelessWidget {
                 borderRadius: BorderRadius.circular(10),
               ),
               child: Text(
-                kyc ? '✅ Vérifié' : '⏳ KYC en cours',
+                kyc ? t.t('kyc_verified') : t.t('kyc_pending'),
                 style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w600),
               ),
             ),
           ]),
           const SizedBox(height: 4),
           Text(
-            isProvider
-                ? 'Vous êtes en mode prestataire — gérez vos missions'
-                : 'Vous êtes en mode client — accédez à tous les services',
+            isProvider ? t.t('provider_mode_desc') : t.t('client_mode_desc'),
             style: const TextStyle(color: Colors.white70, fontSize: 12),
           ),
         ])),
@@ -363,23 +808,32 @@ class _ClientGrid extends StatelessWidget {
   final BadgeCounts badges;
   const _ClientGrid({required this.badges});
 
+  // labelKey → traduit dans _ServiceCard via AppTranslations.of(context).t()
+  static const _staticServices = [
+    _ServiceItem('🎓', 'education',   Color(0xFF4F46E5), '/education',   0),
+    _ServiceItem('🔧', 'artisans',    Color(0xFFF59E0B), '/artisans',    0),
+    _ServiceItem('🏠', 'real_estate', Color(0xFF10B981), '/immobilier',  0),
+    _ServiceItem('🧹', 'housekeeping',Color(0xFFEC4899), '/menagere',    0),
+    _ServiceItem('🛵', 'moto',        Color(0xFFEF4444), '/moto',        0),
+    _ServiceItem('🛒', 'marketplace', Color(0xFF8B5CF6), '/marketplace', 0),
+    _ServiceItem('🚗', 'rental',      Color(0xFF0288D1), '/rental',      0),
+  ];
+
   @override
   Widget build(BuildContext context) {
-    final services = [
-      _ServiceItem('🎓', 'Éducation',  const Color(0xFF4F46E5), '/education',   badges.education),
-      _ServiceItem('🔧', 'Artisans',   const Color(0xFFF59E0B), '/artisans',    badges.artisans),
-      _ServiceItem('🏠', 'Immobilier', const Color(0xFF10B981), '/immobilier',  0),
-      _ServiceItem('🧹', 'Ménagère',   const Color(0xFFEC4899), '/menagere',    0),
-      _ServiceItem('🛵', 'Moto',       const Color(0xFFEF4444), '/moto',        0),
-      _ServiceItem('🛒', 'Marché',     const Color(0xFF8B5CF6), '/marketplace', 0),
-    ];
+    // Badges injectés dynamiquement sur les items concernés
+    final services = _staticServices.map((s) {
+      if (s.route == '/education') return _ServiceItem(s.icon, s.labelKey, s.color, s.route, badges.education);
+      if (s.route == '/artisans')  return _ServiceItem(s.icon, s.labelKey, s.color, s.route, badges.artisans);
+      return s;
+    }).toList();
     return GridView.count(
-      crossAxisCount: 3,
+      crossAxisCount: 4,
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
-      crossAxisSpacing: 12,
-      mainAxisSpacing: 12,
-      childAspectRatio: 1.0,
+      crossAxisSpacing: 10,
+      mainAxisSpacing: 10,
+      childAspectRatio: 0.95,
       children: services.map((s) => _ServiceCard(item: s)).toList(),
     );
   }
@@ -390,16 +844,22 @@ class _ProviderGrid extends StatelessWidget {
   final BadgeCounts badges;
   const _ProviderGrid({required this.badges});
 
+  static const _staticModules = [
+    _ServiceItem('🔧', 'my_quotes',     Color(0xFFF59E0B), '/artisans',              0),
+    _ServiceItem('🎓', 'my_classes',    Color(0xFF4F46E5), '/education',             0),
+    _ServiceItem('🧹', 'my_missions',   Color(0xFFEC4899), '/menagere',              0),
+    _ServiceItem('🛵', 'my_deliveries', Color(0xFFEF4444), '/moto',                  0),
+    _ServiceItem('🏠', 'my_properties', Color(0xFF10B981), '/immobilier',            0),
+    _ServiceItem('💼', 'my_portfolio',  Color(0xFF0EA5E9), '/artisans/portfolio/me', 0),
+  ];
+
   @override
   Widget build(BuildContext context) {
-    final modules = [
-      _ServiceItem('🔧', 'Mes devis',     const Color(0xFFF59E0B), '/artisans',              badges.artisans),
-      _ServiceItem('🎓', 'Mes cours',     const Color(0xFF4F46E5), '/education',             badges.education),
-      _ServiceItem('🧹', 'Mes missions',  const Color(0xFFEC4899), '/menagere',              0),
-      _ServiceItem('🛵', 'Mes livraisons',const Color(0xFFEF4444), '/moto',                  0),
-      _ServiceItem('🏠', 'Mes biens',     const Color(0xFF10B981), '/immobilier',            0),
-      _ServiceItem('💼', 'Mon portfolio', const Color(0xFF0EA5E9), '/artisans/portfolio/me', 0),
-    ];
+    final modules = _staticModules.map((m) {
+      if (m.route == '/artisans')  return _ServiceItem(m.icon, m.labelKey, m.color, m.route, badges.artisans);
+      if (m.route == '/education') return _ServiceItem(m.icon, m.labelKey, m.color, m.route, badges.education);
+      return m;
+    }).toList();
     return GridView.count(
       crossAxisCount: 3,
       shrinkWrap: true,
@@ -414,10 +874,10 @@ class _ProviderGrid extends StatelessWidget {
 
 // ── Carte service ─────────────────────────────────────────────────────────────
 class _ServiceItem {
-  final String icon, label, route;
+  final String icon, labelKey, route;
   final Color color;
   final int badge;
-  const _ServiceItem(this.icon, this.label, this.color, this.route, this.badge);
+  const _ServiceItem(this.icon, this.labelKey, this.color, this.route, this.badge);
 }
 
 class _ServiceCard extends ConsumerWidget {
@@ -460,7 +920,7 @@ class _ServiceCard extends ConsumerWidget {
               ),
               const SizedBox(height: 8),
               Text(
-                item.label,
+                AppTranslations.of(context).t(item.labelKey),
                 style: TextStyle(
                     fontSize: 11, fontWeight: FontWeight.w600, color: item.color),
                 textAlign: TextAlign.center,
@@ -528,8 +988,10 @@ class _RecentActivity extends StatelessWidget {
           child: Column(children: [
             Icon(Icons.inbox_outlined, size: 40, color: Colors.grey.shade300),
             const SizedBox(height: 8),
-            Text('Aucune activité récente',
-                style: TextStyle(color: Colors.grey.shade400, fontSize: 13)),
+            Text(
+              AppTranslations.of(context).t('no_recent_activity'),
+              style: TextStyle(color: Colors.grey.shade400, fontSize: 13),
+            ),
           ]),
         ),
       );
@@ -645,16 +1107,16 @@ class _AnnouncementsSection extends ConsumerWidget {
              pl.contains('carreleur') || pl.contains('soudeur');
     });
 
+    final t = AppTranslations.of(context);
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      const Text('📋 Annonces disponibles',
-          style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
+      Text('📋 ${t.t('available_ads')}',
+          style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
       const SizedBox(height: 10),
 
-      // Annonces éducation
       if (isTeacher || professions.isEmpty)
         _AnnouncementsList(
           icon: '📚',
-          label: 'Cours particuliers',
+          label: t.t('private_lessons'),
           color: const Color(0xFF1976D2),
           provider: _homeEducationRequestsProvider,
           onTap: (item) => context.push('/education/requests'),
@@ -663,11 +1125,10 @@ class _AnnouncementsSection extends ConsumerWidget {
       if ((isTeacher || professions.isEmpty) && (isArtisan || professions.isEmpty))
         const SizedBox(height: 10),
 
-      // Annonces artisans
       if (isArtisan || professions.isEmpty)
         _AnnouncementsList(
           icon: '🔧',
-          label: 'Travaux & services',
+          label: t.t('works_services'),
           color: const Color(0xFFF59E0B),
           provider: _homeArtisanRequestsProvider,
           onTap: (item) {
@@ -676,9 +1137,8 @@ class _AnnouncementsSection extends ConsumerWidget {
           },
         ),
 
-      // Si aucune catégorie détectée, afficher les deux
       if (!isTeacher && !isArtisan && professions.isNotEmpty)
-        Text('Completez votre profil pour voir les annonces correspondantes',
+        Text(t.t('complete_profile_ads'),
             style: TextStyle(fontSize: 12, color: Colors.grey.shade500)),
     ]);
   }

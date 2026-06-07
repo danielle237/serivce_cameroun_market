@@ -36,6 +36,7 @@ dependencies:
 
   # Localisation GPS
   geolocator: ^11.0.0
+  geocoding: ^3.0.0
   permission_handler: ^11.3.0
 
   # Stockage offline

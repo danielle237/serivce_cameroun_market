@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/api/api_client.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/i18n/app_translations.dart';
 
 class MotoScreen extends ConsumerStatefulWidget {
   const MotoScreen({super.key});
@@ -26,37 +27,38 @@ class _MotoScreenState extends ConsumerState<MotoScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final t = AppTranslations.of(context);
     return Scaffold(
-      appBar: AppBar(title: const Text('Moto & Livraison')),
+      appBar: AppBar(title: Text(t.t('moto_delivery'))),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(24),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           // Type de service
-          const Text('Type de service', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+          Text(t.t('service_type'), style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
           const SizedBox(height: 12),
           SingleChildScrollView(
             scrollDirection: Axis.horizontal,
             child: Row(children: [
-              _TypeChip(label: '🛵 Transport', value: 'transport_personne', selected: _type == 'transport_personne', onTap: () => setState(() { _type = 'transport_personne'; _estimate(); })),
-              _TypeChip(label: '📦 Colis', value: 'livraison_colis', selected: _type == 'livraison_colis', onTap: () => setState(() { _type = 'livraison_colis'; _estimate(); })),
-              _TypeChip(label: '🛒 Courses', value: 'courses', selected: _type == 'courses', onTap: () => setState(() { _type = 'courses'; _estimate(); })),
-              _TypeChip(label: '🍔 Repas', value: 'livraison_repas', selected: _type == 'livraison_repas', onTap: () => setState(() { _type = 'livraison_repas'; _estimate(); })),
+              _TypeChip(label: t.t('transport_chip'), value: 'transport_personne', selected: _type == 'transport_personne', onTap: () => setState(() { _type = 'transport_personne'; _estimate(); })),
+              _TypeChip(label: t.t('parcel_chip'), value: 'livraison_colis', selected: _type == 'livraison_colis', onTap: () => setState(() { _type = 'livraison_colis'; _estimate(); })),
+              _TypeChip(label: t.t('shopping_chip'), value: 'courses', selected: _type == 'courses', onTap: () => setState(() { _type = 'courses'; _estimate(); })),
+              _TypeChip(label: t.t('food_chip'), value: 'livraison_repas', selected: _type == 'livraison_repas', onTap: () => setState(() { _type = 'livraison_repas'; _estimate(); })),
             ]),
           ),
           const SizedBox(height: 20),
 
           // Trajet
-          TextFormField(controller: _pickupCtrl, decoration: const InputDecoration(labelText: 'Point de départ', prefixIcon: Icon(Icons.my_location, color: AppColors.primary))),
+          TextFormField(controller: _pickupCtrl, decoration: InputDecoration(labelText: t.t('pickup_point'), prefixIcon: const Icon(Icons.my_location, color: AppColors.primary))),
           const SizedBox(height: 8),
           Container(height: 24, width: 2, margin: const EdgeInsets.only(left: 24), color: AppColors.primary.withOpacity(0.3)),
           const SizedBox(height: 8),
-          TextFormField(controller: _dropoffCtrl, decoration: const InputDecoration(labelText: 'Destination', prefixIcon: Icon(Icons.location_on, color: AppColors.error))),
+          TextFormField(controller: _dropoffCtrl, decoration: InputDecoration(labelText: t.t('destination'), prefixIcon: const Icon(Icons.location_on, color: AppColors.error))),
 
           const SizedBox(height: 20),
 
           // Distance slider (estimée)
           Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-            const Text('Distance estimée', style: TextStyle(fontWeight: FontWeight.w600)),
+            Text(t.t('estimated_distance'), style: const TextStyle(fontWeight: FontWeight.w600)),
             Text('${_distance.toStringAsFixed(1)} km', style: const TextStyle(color: AppColors.primary, fontWeight: FontWeight.w700)),
           ]),
           Slider(value: _distance, min: 0.5, max: 20, divisions: 39, onChanged: (v) { setState(() => _distance = v); _estimate(); }),
@@ -73,7 +75,7 @@ class _MotoScreenState extends ConsumerState<MotoScreen> {
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-                const Text('Prix estimé', style: TextStyle(fontWeight: FontWeight.w600)),
+                Text(t.t('estimated_price'), style: const TextStyle(fontWeight: FontWeight.w600)),
                 Text('$_estimatedPrice XAF', style: const TextStyle(color: AppColors.primary, fontSize: 20, fontWeight: FontWeight.w700)),
               ]),
             ),
@@ -83,7 +85,7 @@ class _MotoScreenState extends ConsumerState<MotoScreen> {
           ElevatedButton.icon(
             onPressed: _loading ? null : _requestRide,
             icon: const Icon(Icons.motorcycle),
-            label: const Text('Trouver un conducteur'),
+            label: Text(t.t('find_driver')),
           ),
         ]),
       ),
@@ -99,7 +101,7 @@ class _MotoScreenState extends ConsumerState<MotoScreen> {
         'pickupLat': 4.05, 'pickupLng': 9.75, 'dropoffLat': 4.06, 'dropoffLng': 9.76,
         'distanceKm': _distance,
       });
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Demande envoyée! Recherche de conducteur...'), backgroundColor: AppColors.success));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(AppTranslations.of(context).t('request_sent_driver')), backgroundColor: AppColors.success));
     } finally {
       if (mounted) setState(() => _loading = false);
     }

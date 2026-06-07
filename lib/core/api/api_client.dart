@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 import 'package:dio/dio.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -7,7 +6,8 @@ import '../services/cache_service.dart';
 
 // ─── URL du serveur ────────────────────────────────────────────────────────────
 const _baseUrl   = 'http://51.83.40.138:3005/api/v1';
-const _wsBaseUrl = 'http://51.83.40.138:3005';
+// ignore: unused_element
+const _wsBaseUrl = 'http://51.83.40.138:3005'; // pour WebSocket (ChatScreen)
 
 // ─── Paramètres réseau Cameroun (MTN/Orange 3G/4G instable) ───────────────────
 const _connectTimeout = Duration(seconds: 15);
@@ -43,8 +43,10 @@ class ApiClient {
         final token = await _storage.read(key: 'access_token');
         if (token != null) options.headers['Authorization'] = 'Bearer $token';
 
-        // Limiter à 20 items par page pour économiser la data
-        if (options.method == 'GET' && options.queryParameters['limit'] == null) {
+        // Limiter à 20 items par page pour économiser la data (sauf si déjà fourni)
+        if (options.method == 'GET' &&
+            options.queryParameters['limit'] == null &&
+            !options.path.contains('limit=')) {
           options.queryParameters['limit'] = 20;
         }
         handler.next(options);
@@ -70,7 +72,13 @@ class ApiClient {
     try {
       final refresh = await _storage.read(key: 'refresh_token');
       if (refresh == null) return false;
-      final res = await _dio.post('/auth/refresh', data: {'refreshToken': refresh});
+      // Dio propre sans intercepteurs → évite la boucle récursive si /auth/refresh retourne 401
+      final cleanDio = Dio(BaseOptions(
+        baseUrl: _baseUrl,
+        connectTimeout: _connectTimeout,
+        receiveTimeout: _receiveTimeout,
+      ));
+      final res = await cleanDio.post('/auth/refresh', data: {'refreshToken': refresh});
       await _storage.write(key: 'access_token',  value: res.data['accessToken']);
       await _storage.write(key: 'refresh_token', value: res.data['refreshToken']);
       return true;
@@ -238,12 +246,26 @@ class _RetryInterceptor extends Interceptor {
   @override
   void onError(DioException err, ErrorInterceptorHandler handler) async {
     final attempt = (err.requestOptions.extra['retryCount'] as int?) ?? 0;
+    final status  = err.response?.statusCode;
+
+    // 429 Too Many Requests — respecter le Retry-After avant de relancer
+    if (status == 429 && attempt < retries) {
+      final retryAfter = int.tryParse(
+        err.response?.headers.value('retry-after') ?? '') ?? (1 << attempt);
+      await Future.delayed(Duration(seconds: retryAfter.clamp(1, 30)));
+      err.requestOptions.extra['retryCount'] = attempt + 1;
+      try {
+        final retryResp = await dio.fetch(err.requestOptions);
+        return handler.resolve(retryResp);
+      } catch (_) {}
+    }
+
     final shouldRetry = attempt < retries &&
         (err.type == DioExceptionType.connectionTimeout ||
          err.type == DioExceptionType.receiveTimeout ||
          err.type == DioExceptionType.sendTimeout ||
-         err.response?.statusCode == 503 ||
-         err.response?.statusCode == 502);
+         status == 503 ||
+         status == 502);
 
     if (shouldRetry) {
       await Future.delayed(Duration(seconds: 1 << attempt)); // backoff exponentiel

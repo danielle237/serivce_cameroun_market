@@ -41,23 +41,28 @@ class CacheService {
     final expiry = _meta.get(key);
     if (expiry == null) return null;
     if (DateTime.now().millisecondsSinceEpoch > expiry) {
-      // Expiré → nettoyage silencieux
-      _box.delete(key);
-      _meta.delete(key);
+      // Expiré → retourner null SANS supprimer (reste disponible pour getStale)
       return null;
     }
-    final raw = _box.get(key);
-    if (raw == null) return null;
-    return jsonDecode(raw as String) as T;
+    return _decode<T>(key);
   }
 
   /// Récupérer une valeur MÊME expirée (mode hors-ligne)
-  static T? getStale<T>(String key) {
+  static T? getStale<T>(String key) => _decode<T>(key);
+
+  /// Décodage JSON sécurisé — retourne null en cas d'erreur de cast ou de format
+  static T? _decode<T>(String key) {
     final raw = _box.get(key);
     if (raw == null) return null;
     try {
-      return jsonDecode(raw as String) as T;
+      final decoded = jsonDecode(raw as String);
+      if (decoded is T) return decoded;
+      // Tentative de cast souple (ex: List<dynamic> → List)
+      return decoded as T;
     } catch (_) {
+      // Données corrompues ou type inattendu — on supprime pour éviter la boucle
+      _box.delete(key);
+      _meta.delete(key);
       return null;
     }
   }

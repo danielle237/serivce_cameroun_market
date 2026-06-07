@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 import '../../../core/api/api_client.dart';
 import '../../../core/providers/auth_provider.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/i18n/app_translations.dart';
 
 final educationSessionsProvider = FutureProvider.autoDispose<List>((ref) async {
   final api = ref.read(apiClientProvider);
@@ -35,43 +36,43 @@ class EducationHomeScreen extends ConsumerWidget {
     return Scaffold(
       backgroundColor: const Color(0xFFF8F9FA),
       appBar: AppBar(
-        title: const Text('Module Éducation'),
+        title: Text(AppTranslations.of(context).t('education_module')),
         actions: [
           if (isTeacher) ...[
             IconButton(
               icon: const Icon(Icons.calendar_view_week_outlined),
-              tooltip: 'Planning semainier',
+              tooltip: AppTranslations.of(context).t('weekly_schedule'),
               onPressed: () => context.push('/education/schedule'),
             ),
             IconButton(
               icon: const Icon(Icons.add_circle_outline),
-              tooltip: 'Planifier une séance',
+              tooltip: AppTranslations.of(context).t('schedule_session'),
               onPressed: () => _showScheduleSheet(context, ref),
             ),
           ],
           if (!isTeacher) ...[
             IconButton(
               icon: const Icon(Icons.calendar_view_week_outlined),
-              tooltip: 'Planning des cours',
+              tooltip: AppTranslations.of(context).t('class_schedule'),
               onPressed: () => context.push('/education/schedule-parent'),
             ),
             IconButton(
               icon: const Icon(Icons.receipt_long_outlined),
-              tooltip: 'Récapitulatif mensuel',
+              tooltip: AppTranslations.of(context).t('monthly_summary'),
               onPressed: () => context.push('/education/billing'),
             ),
             // Accès direct aux cahiers de suivi des élèves
             IconButton(
               icon: const Icon(Icons.menu_book_outlined),
-              tooltip: 'Cahiers de suivi',
+              tooltip: AppTranslations.of(context).t('follow_up_books'),
               onPressed: () {
                 // Cherche le premier contrat actif avec séance validée
                 final data = ref.read(educationSessionsProvider).value ?? [];
                 final withContract = data.where((s) =>
                     s['contractId'] != null && s['status'] == 'validated').toList();
                 if (withContract.isEmpty) {
-                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                    content: Text('Aucun cahier disponible pour l\'instant'),
+                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                    content: Text(AppTranslations.of(context).t('no_books_available')),
                     backgroundColor: Colors.orange,
                   ));
                   return;

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/api/api_client.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/i18n/app_translations.dart';
 
 final walletProvider = FutureProvider.autoDispose<Map<String, dynamic>>((ref) async {
   final api = ref.read(apiClientProvider);
@@ -28,8 +29,9 @@ class WalletScreen extends ConsumerWidget {
     final walletAsync = ref.watch(walletProvider);
     final txAsync = ref.watch(transactionsProvider);
 
+    final t = AppTranslations.of(context);
     return Scaffold(
-      appBar: AppBar(title: const Text('Mon Wallet'), actions: [
+      appBar: AppBar(title: Text(t.t('wallet')), actions: [
         IconButton(icon: const Icon(Icons.refresh), onPressed: () {
           ref.invalidate(walletProvider);
           ref.invalidate(transactionsProvider);
@@ -37,7 +39,7 @@ class WalletScreen extends ConsumerWidget {
       ]),
       body: walletAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text('Erreur: $e')),
+        error: (e, _) => Center(child: Text('${t.t('error')}: $e')),
         data: (wallet) => SingleChildScrollView(
           padding: const EdgeInsets.all(20),
           child: Column(
@@ -54,7 +56,7 @@ class WalletScreen extends ConsumerWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text('Solde disponible', style: TextStyle(color: Colors.white70, fontSize: 14)),
+                    Text(t.t('available_balance'), style: const TextStyle(color: Colors.white70, fontSize: 14)),
                     const SizedBox(height: 8),
                     Text(
                       '${wallet['balance'] ?? 0} XAF',
@@ -62,9 +64,9 @@ class WalletScreen extends ConsumerWidget {
                     ),
                     const SizedBox(height: 16),
                     Row(children: [
-                      _WalletStat(label: 'En escrow', value: '${wallet['escrowBalance'] ?? 0} XAF', icon: Icons.lock),
+                      _WalletStat(label: t.t('in_escrow'), value: '${wallet['escrowBalance'] ?? 0} XAF', icon: Icons.lock),
                       const SizedBox(width: 16),
-                      _WalletStat(label: 'Total gagné', value: '${wallet['totalEarned'] ?? 0} XAF', icon: Icons.trending_up),
+                      _WalletStat(label: t.t('total_earned'), value: '${wallet['totalEarned'] ?? 0} XAF', icon: Icons.trending_up),
                     ]),
                   ],
                 ),
@@ -74,11 +76,11 @@ class WalletScreen extends ConsumerWidget {
 
               // Actions
               Row(children: [
-                Expanded(child: _WalletAction(icon: Icons.add, label: 'Recharger', color: AppColors.primary, onTap: () => _showTopUp(context))),
+                Expanded(child: _WalletAction(icon: Icons.add, label: t.t('top_up'), color: AppColors.primary, onTap: () => _showTopUp(context))),
                 const SizedBox(width: 12),
-                Expanded(child: _WalletAction(icon: Icons.send, label: 'Retirer', color: AppColors.secondary, onTap: () => _showWithdraw(context))),
+                Expanded(child: _WalletAction(icon: Icons.send, label: t.t('withdraw'), color: AppColors.secondary, onTap: () => _showWithdraw(context))),
                 const SizedBox(width: 12),
-                Expanded(child: _WalletAction(icon: Icons.history, label: 'Historique', color: AppColors.info, onTap: () {})),
+                Expanded(child: _WalletAction(icon: Icons.history, label: t.t('history'), color: AppColors.info, onTap: () {})),
               ]),
 
               const SizedBox(height: 24),

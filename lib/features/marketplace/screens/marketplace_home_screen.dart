@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/providers/auth_provider.dart';
+import '../../../core/i18n/app_translations.dart';
 import '../models/product.dart';
 import '../models/banner.dart';
 import '../providers/marketplace_providers.dart';
@@ -189,7 +190,7 @@ class _MarketplaceHomeScreenState
                       controller: _searchCtrl,
                       onChanged: _onSearch,
                       decoration: InputDecoration(
-                        hintText: 'Rechercher un produit...',
+                        hintText: '${AppTranslations.of(context).t('search')}...',
                         prefixIcon: const Icon(Icons.search, color: Colors.grey),
                         suffixIcon: query.isNotEmpty
                             ? IconButton(
